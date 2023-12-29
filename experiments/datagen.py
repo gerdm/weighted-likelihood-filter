@@ -1,4 +1,7 @@
+import os
 import jax
+import numpy as np
+import pandas as pd
 import jax.numpy as jnp
 from functools import partial
 
@@ -193,3 +196,70 @@ class GaussMeanOutlierMovingObject2D:
         keys = jax.random.split(key, n_steps)
         _, output = jax.lax.scan(self.step, z0, keys)
         return output
+
+
+class UCIDatasets:
+    def __init__(self, root_dir):
+        self.root_dir = root_dir
+        self.base_url = (
+            "https://raw.githubusercontent.com/yaringal/DropoutUncertaintyExps"
+            "/master/UCI_Datasets/{dataset}/data/data.txt"
+        )
+
+    @property
+    def datasets(self):
+        return [
+            "bostonHousing",
+            "concrete",
+            "energy",
+            "kin8nm",
+            "naval-propulsion-plant",
+            "power-plant",
+            "protein-tertiary-structure",
+            # "wine-quality-red", # classification
+            "yacht",
+        ]
+    
+    def load_dataset(self, dataset):
+        if dataset not in self.datasets:
+            raise ValueError(f"Dataset {dataset} not found")
+
+        downloaded_datasets = os.listdir(self.root_dir)
+        if any([dataset in d for d in downloaded_datasets]):
+            path = os.path.join(self.root_dir, dataset)
+            df = pd.read_csv(path, sep=r"\s+", header=None)
+        else:
+            path = self.base_url.format(dataset=dataset)
+            df = pd.read_csv(path, sep=r"\s+", header=None)
+            df.to_csv(os.path.join(self.root_dir, dataset), index=False, sep="\t")
+            
+        return df
+    
+    def sample_dataset(
+            self, dataset_name, p_error, v_error=10, prop_warmup=0.1, seed=314
+    ):
+        dataset = self.load_dataset(dataset_name)
+        n_obs, _ = dataset.shape
+        n_warmup = int(n_obs * prop_warmup)
+
+        np.random.seed(seed)
+        data_norm = dataset.iloc[n_warmup:].sample(frac=1.0, replace=False)
+        Rt = data_norm.iloc[:n_warmup].std().values
+        mt = data_norm.iloc[:n_warmup].mean().values
+
+        data_norm = (data_norm.values - mt) / Rt[None, :]
+        n_obs_eval, _ = data_norm.shape
+
+        err_where = np.random.choice(2, size=n_obs_eval, p=[1 - p_error, p_error])
+
+        data_norm[np.where(err_where), -1] = v_error
+
+        res = {
+            "X": data_norm[:, :-1],
+            "y": data_norm[:, -1],
+            "Rt": Rt,
+            "mt": mt,
+            "err_where": err_where,
+        }
+
+        return res
