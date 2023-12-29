@@ -199,6 +199,9 @@ class GaussMeanOutlierMovingObject2D:
 
 
 class UCIDatasets:
+    """
+    https://github.com/yaringal/DropoutUncertaintyExps/tree/master
+    """
     def __init__(self, root_dir):
         self.root_dir = root_dir
         self.base_url = (
@@ -235,7 +238,7 @@ class UCIDatasets:
             
         return df
     
-    def sample_dataset(
+    def sample_one_sided_noisy_dataset(
             self, dataset_name, p_error, v_error=10, prop_warmup=0.1, seed=314
     ):
         dataset = self.load_dataset(dataset_name)
