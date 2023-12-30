@@ -247,23 +247,57 @@ class UCIDatasets:
 
         np.random.seed(seed)
         data_norm = dataset.iloc[n_warmup:].sample(frac=1.0, replace=False)
-        Rt = data_norm.iloc[:n_warmup].std().values
-        mt = data_norm.iloc[:n_warmup].mean().values
+        minv = data_norm.iloc[:n_warmup].min().values
+        maxv = data_norm.iloc[:n_warmup].max().values
 
-        data_norm = (data_norm.values - mt) / Rt[None, :]
+        data_norm = (data_norm.values - minv) / (maxv - minv)
         n_obs_eval, _ = data_norm.shape
 
         err_where = np.random.choice(2, size=n_obs_eval, p=[1 - p_error, p_error])
 
         ix_where = np.where(err_where)
-        err_vals = np.random.uniform(-v_error, v_error, size=len(ix_where[0]))
+        # err_vals = np.random.uniform(-v_error, v_error, size=len(ix_where[0]))
+        err_vals = np.random.choice([-1, 1], size=len(ix_where[0])) * v_error
         data_norm[ix_where, -1] = err_vals
 
         res = {
             "X": data_norm[:, :-1],
             "y": data_norm[:, -1],
-            "Rt": Rt,
-            "mt": mt,
+            "maxv": maxv,
+            "minv": minv,
+            "err_where": err_where,
+        }
+
+        return res
+
+    def sample_noisy_covariates(
+            self, dataset_name, p_error, v_error=10, prop_warmup=0.1, seed=314
+    ):
+        dataset = self.load_dataset(dataset_name)
+        n_obs, _ = dataset.shape
+        n_warmup = int(n_obs * prop_warmup)
+
+        np.random.seed(seed)
+        data_norm = dataset.iloc[n_warmup:].sample(frac=1.0, replace=False)
+        minv = data_norm.iloc[:n_warmup].min().values
+        maxv = data_norm.iloc[:n_warmup].max().values
+
+        data_norm = (data_norm.values - minv) / (maxv - minv)
+        n_obs_eval, _ = data_norm.shape
+
+        err_where = np.random.choice(2, size=n_obs_eval, p=[1 - p_error, p_error])
+
+        ix_where = np.where(err_where)
+        # err_vals = np.random.uniform(-v_error, v_error, size=len(ix_where[0]))
+        err_vals = np.random.choice([-1, 1], size=len(ix_where[0])) * v_error
+        # data_norm[ix_where, -1] = err_vals
+        data_norm[ix_where, :-1] = np.random.uniform(-v_error, v_error, size=(len(ix_where[0]), data_norm.shape[1] - 1))
+
+        res = {
+            "X": data_norm[:, :-1],
+            "y": data_norm[:, -1],
+            "maxv": maxv,
+            "minv": minv,
             "err_where": err_where,
         }
 
