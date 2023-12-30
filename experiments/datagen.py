@@ -255,7 +255,9 @@ class UCIDatasets:
 
         err_where = np.random.choice(2, size=n_obs_eval, p=[1 - p_error, p_error])
 
-        data_norm[np.where(err_where), -1] = v_error
+        ix_where = np.where(err_where)
+        err_vals = np.random.uniform(-v_error, v_error, size=len(ix_where[0]))
+        data_norm[ix_where, -1] = err_vals
 
         res = {
             "X": data_norm[:, :-1],
