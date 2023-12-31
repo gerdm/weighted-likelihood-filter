@@ -283,19 +283,21 @@ class UCIDatasets:
         maxv = data_norm.iloc[:n_warmup].max().values
 
         data_norm = (data_norm.values - minv) / (maxv - minv)
-        n_obs_eval, _ = data_norm.shape
+        n_obs_eval, n_features = data_norm.shape
 
-        err_where = np.random.choice(2, size=n_obs_eval, p=[1 - p_error, p_error])
+        X = data_norm[:, :-1]
+        y = data_norm[:, -1]
+        n_features = X.shape[1]
 
+        err_where = np.random.choice(2, size=(n_obs_eval, n_features), p=[1 - p_error, p_error])
         ix_where = np.where(err_where)
-        # err_vals = np.random.uniform(-v_error, v_error, size=len(ix_where[0]))
-        err_vals = np.random.choice([-1, 1], size=len(ix_where[0])) * v_error
-        # data_norm[ix_where, -1] = err_vals
-        data_norm[ix_where, :-1] = np.random.uniform(-v_error, v_error, size=(len(ix_where[0]), data_norm.shape[1] - 1))
+        # err_vals = np.random.choice([-1, 1], size=len(ix_where[0])) * v_error
+        err_vals = np.random.uniform(-v_error, v_error, size=len(ix_where[0]))
+        X[ix_where] = err_vals
 
         res = {
-            "X": data_norm[:, :-1],
-            "y": data_norm[:, -1],
+            "X": X,
+            "y": y,
             "maxv": maxv,
             "minv": minv,
             "err_where": err_where,
