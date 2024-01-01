@@ -250,7 +250,12 @@ class UCIDatasets:
         minv = data_norm.iloc[:n_warmup].min().values
         maxv = data_norm.iloc[:n_warmup].max().values
 
-        data_norm = (data_norm.values - minv) / (maxv - minv)
+        normv = maxv - minv
+        if np.any(normv == 0):
+            mask = np.where(normv == 0)[0]
+            normv[mask] = minv[mask]
+
+        data_norm = (data_norm.values - minv) / normv
         n_obs_eval, _ = data_norm.shape
 
         err_where = np.random.choice(2, size=n_obs_eval, p=[1 - p_error, p_error])
