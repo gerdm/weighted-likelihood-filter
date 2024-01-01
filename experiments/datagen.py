@@ -219,7 +219,7 @@ class UCIDatasets:
             "naval-propulsion-plant",
             "power-plant",
             "protein-tertiary-structure",
-            # "wine-quality-red", # classification
+            "wine-quality-red",
             "yacht",
         ]
     
