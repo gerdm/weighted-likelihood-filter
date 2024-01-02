@@ -27,6 +27,7 @@ from rebayes_mini.methods import generalised_bayes_filter as gbfilter
 
 dataset_name = sys.argv[1]
 p_error = float(sys.argv[2]) / 100
+n_runs = int(sys.argv[3])
 
 
 devices = jax.devices()
@@ -35,6 +36,10 @@ sharding = PositionalSharding(devices)
 
 
 uci = datagen.UCIDatasets("./data")
+print("-" * 80)
+print(f"Dataset: {dataset_name}")
+print(f"p_error: {p_error}")
+print(f"n_runs: {n_runs}")
 
 
 noise_type = "target" # or "covariate"
@@ -43,7 +48,6 @@ X_collection= []
 y_collection = []
 ix_clean_collection = []
 
-n_runs = 50
 v_error = 50
 seed_init = 314
 for i in range(n_runs):
