@@ -383,6 +383,79 @@ get_ipython().run_cell_magic('time', '', 'bel_init = agent.init_bel(params_init,
 
 err_collection_mekf = pd.DataFrame(np.power(y_collection - yhat_collection_mekf, 2).T)
 
+# ## O-EKF
+# Outlier-based extended Kalman filter
+
+
+def filter_oekf(log_lr, alpha, beta):
+    """
+    Outlier ekf
+    """
+    lr = np.exp(log_lr)
+    agent_wang2018 = rfilter.OutlierDetectionExtendedKalmanFilter(
+        lambda x: x, model.apply,
+        dynamics_covariance=Q,
+        observation_covariance=observation_covariance * jnp.eye(1),
+        alpha=alpha,
+        beta=beta,
+        tol_inlier=1e-7,
+        # tol_inner=1e-3 # refactor
+        n_inner=2
+    )
+    
+    bel_init = agent_wang2018.init_bel(params_init, cov=lr)
+    callback = partial(callback_fn, applyfn=agent_wang2018.vobs_fn)
+    
+    bel_oekf, yhat_pp = agent_wang2018.scan(bel_init, y, X, callback_fn=callback)
+    out = (agent_wang2018, bel_oekf)
+    return yhat_pp.squeeze(), out
+
+
+def opt_step(log_lr, alpha, beta):
+    res = -jnp.power(filter_oekf(log_lr, alpha, beta)[0] - y, 2)
+    res = jnp.median(res)
+    if np.isnan(res):
+        res = -1e+6
+    
+    return res
+
+
+# In[39]:
+
+
+get_ipython().run_cell_magic('time', '', 'bo = BayesianOptimization(\n    opt_step,\n    pbounds={\n        "log_lr": (-5, 0),\n        "alpha": (0.0, 5.0),\n        "beta": (0.0, 5.0)\n    },\n    random_state=314,\n    verbose=1\n)\nbo.maximize(init_points=5, n_iter=5)\n')
+
+
+# ### Eval
+
+# In[42]:
+
+
+log_lr = bo.max["params"]["log_lr"]
+lr_oekf = np.exp(log_lr)
+alpha = bo.max["params"]["alpha"]
+beta = bo.max["params"]["beta"]
+
+agent = rfilter.OutlierDetectionExtendedKalmanFilter(
+        lambda x: x, model.apply,
+        dynamics_covariance=Q,
+        observation_covariance=observation_covariance * jnp.eye(1),
+        alpha=alpha,
+        beta=beta,
+        tol_inlier=1e-7,
+        # tol_inner=1e-3 # refactor
+        n_inner=2
+    )
+
+
+# In[43]:
+
+
+get_ipython().run_cell_magic('time', '', 'bel_init = agent.init_bel(params_init, cov=lr)\nbel_init = jax.device_put(bel_init, sharding.replicate(0))\ncallback = partial(callback_fn, applyfn=agent.vobs_fn)\nscanfn = jax.jit(jax.vmap(agent.scan, in_axes=(None, 0, 0, None)), static_argnames=("callback_fn",))\n\n_, yhat_collection_oekf = scanfn(bel_init, y_collection, X_collection, callback)\nyhat_collection_oekf = jax.block_until_ready(yhat_collection_oekf)\nyhat_collection_oekf = yhat_collection_oekf.squeeze()\n')
+
+
+err_collection_oekf = pd.DataFrame(np.power(y_collection - yhat_collection_oekf, 2).T)
+
 
 # ## Online SGD
 
@@ -490,6 +563,7 @@ df_results = pd.DataFrame({
     "OGD": err_collection_ogd.median(axis=0),
     "WLF-MD": err_collection_mekf.median(axis=0),
     "E-ANN-1": err_collection_ann1.median(axis=0),
+    "O-EKF": err_collection_oekf.median(axis=0),
 })
 
 print(df_results.describe())
@@ -508,7 +582,8 @@ err_collection = {
         "EKF": err_collection_ekf,
         "OGD": err_collection_ogd,
         "WLF-MD": err_collection_mekf,
-        "E-ANN-1": err_collection_ann1
+        "E-ANN-1": err_collection_ann1,
+        "O-EKF": err_collection_oekf,
     },
     "config": {
         "mask-clean": mask_clean,
