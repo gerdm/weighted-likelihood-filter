@@ -16,6 +16,8 @@ import flax.linen as nn
 import jax.numpy as jnp
 
 import datagen
+from tqdm import tqdm
+from time import time
 from functools import partial
 from bayes_opt import BayesianOptimization
 from jax.sharding import PositionalSharding
@@ -126,7 +128,8 @@ params_init = model.init(key, X[:1])
 
 X_collection.shape
 
-
+# *************************************************************************************************************************************************
+# *************************************************************************************************************************************************
 # ## EKF
 
 # In[935]:
@@ -169,12 +172,22 @@ get_ipython().run_cell_magic('time', '', 'bo = BayesianOptimization(\n    opt_st
 get_ipython().run_cell_magic('time', '', '\nlr = np.exp(bo.max["params"]["log_lr"])\nagent = gfilter.ExtendedKalmanFilter(\n    lambda x: x,\n    model.apply,\n    dynamics_covariance=Q,\n    observation_covariance=1.0 * jnp.eye(1),\n)\n\nbel_init = agent.init_bel(params_init, cov=lr)\n\ncallback = partial(callback_fn, applyfn=agent.vobs_fn)\nscanfn = jax.vmap(agent.scan, in_axes=(None, 0, 0, None))\nres = scanfn(bel_init, y_collection, X_collection, callback)\n\nres = jax.block_until_ready(res)\nstate_final_collection, yhat_collection_ekf = res\nyhat_collection_ekf = yhat_collection_ekf.squeeze()\n')
 
 
+time_runs = []
+for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs, desc="EKF"):
+    time_init = time()
+    _, y_est = agent.scan(bel_init, yc, Xc, callback)
+    y_est = y_est.block_until_ready()
+    time_end = time()
+    time_runs.append(time_end - time_init)
+
+
 # In[ ]:
 
-
+time_runs_ekf = pd.Series(time_runs, name="EKF")
 err_collection_ekf = pd.DataFrame(np.power(y_collection - yhat_collection_ekf, 2).T)
 
-
+# *************************************************************************************************************************************************
+# *************************************************************************************************************************************************
 # ## WLF-IMQ
 
 # ### Hparam choice
@@ -238,10 +251,21 @@ get_ipython().run_cell_magic('time', '', 'bel_init = agent.init_bel(params_init,
 # In[ ]:
 
 
+time_runs = []
+for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs):
+    time_init = time()
+    _, y_est = agent.scan(bel_init, yc, Xc, callback)
+    y_est = y_est.block_until_ready()
+    time_end = time()
+    time_runs.append(time_end - time_init)
+
+
+time_runs_wlf = pd.Series(time_runs, name="WLF-IMQ")
 err_collection_wlf = pd.DataFrame(np.power(y_collection - yhat_collection_wlf, 2).T)
 
-
-# ## IW-based EKF
+# *************************************************************************************************************************************************
+# *************************************************************************************************************************************************
+# ## Inverse-Wishard EKF
 # (Agamenoni 2012)
 
 # ### Hparam choice
@@ -255,7 +279,7 @@ def filter_rkf(noise_scaling, log_lr):
         lambda x: x, model.apply, dynamics_covariance=Q,
         prior_observation_covariance=observation_covariance * jnp.eye(1),
         noise_scaling=noise_scaling,
-        n_inner=1
+        n_inner=2
     )
     
     bel_init = agent_rekf.init_bel(params_init, cov=lr)
@@ -298,7 +322,7 @@ agent = rfilter.ExtendedRobustKalmanFilter(
     model.apply,
     dynamics_covariance=0.0,
     prior_observation_covariance=1.0 * jnp.eye(1),
-    n_inner=1,
+    n_inner=2,
     noise_scaling=noise_scaling,
 )
 
@@ -309,12 +333,20 @@ agent = rfilter.ExtendedRobustKalmanFilter(
 get_ipython().run_cell_magic('time', '', 'bel_init = agent.init_bel(params_init, cov=lr)\ncallback = partial(callback_fn, applyfn=agent.vobs_fn)\n_, yhat_collection_ann1 = jax.vmap(agent.scan, in_axes=(None, 0, 0, None))(bel_init, y_collection, X_collection, callback)\nyhat_collection_ann1 = yhat_collection_ann1.squeeze()\n')
 
 
-# In[ ]:
+time_runs = []
+for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs, desc="EKF-IW"):
+    time_init = time()
+    _, y_est = agent.scan(bel_init, yc, Xc, callback)
+    y_est = y_est.block_until_ready()
+    time_end = time()
+    time_runs.append(time_end - time_init)
+    
 
-
+time_runs_ann1 = pd.Series(time_runs, name="EKF-IW")
 err_collection_ann1 = pd.DataFrame(np.power(y_collection - yhat_collection_ann1, 2).T)
 
-
+# *************************************************************************************************************************************************
+# *************************************************************************************************************************************************
 # ## WLF-MD
 # Weighted likelihood filter with Mahalanobis distance thresholding weighting function
 
@@ -378,11 +410,21 @@ agent = rfilter.ExtendedThresholdedKalmanFilter(
 get_ipython().run_cell_magic('time', '', 'bel_init = agent.init_bel(params_init, cov=lr)\nbel_init = jax.device_put(bel_init, sharding.replicate(0))\ncallback = partial(callback_fn, applyfn=agent.vobs_fn)\nscanfn = jax.jit(jax.vmap(agent.scan, in_axes=(None, 0, 0, None)), static_argnames=("callback_fn",))\n\n_, yhat_collection_mekf = scanfn(bel_init, y_collection, X_collection, callback)\nyhat_collection_mekf = jax.block_until_ready(yhat_collection_mekf)\nyhat_collection_mekf = yhat_collection_mekf.squeeze()\n')
 
 
-# In[ ]:
+
+time_runs = []
+for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs, desc="WLF-MD"):
+    time_init = time()
+    _, y_est = agent.scan(bel_init, yc, Xc, callback)
+    y_est = y_est.block_until_ready()
+    time_end = time()
+    time_runs.append(time_end - time_init)
 
 
+time_runs_mekf = pd.Series(time_runs, name="WLF-MD")
 err_collection_mekf = pd.DataFrame(np.power(y_collection - yhat_collection_mekf, 2).T)
 
+# *************************************************************************************************************************************************
+# *************************************************************************************************************************************************
 # ## O-EKF
 # Outlier-based extended Kalman filter
 
@@ -454,9 +496,21 @@ agent = rfilter.OutlierDetectionExtendedKalmanFilter(
 get_ipython().run_cell_magic('time', '', 'bel_init = agent.init_bel(params_init, cov=lr)\nbel_init = jax.device_put(bel_init, sharding.replicate(0))\ncallback = partial(callback_fn, applyfn=agent.vobs_fn)\nscanfn = jax.jit(jax.vmap(agent.scan, in_axes=(None, 0, 0, None)), static_argnames=("callback_fn",))\n\n_, yhat_collection_oekf = scanfn(bel_init, y_collection, X_collection, callback)\nyhat_collection_oekf = jax.block_until_ready(yhat_collection_oekf)\nyhat_collection_oekf = yhat_collection_oekf.squeeze()\n')
 
 
+time_runs = []
+for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs, desc="EKF-B"):
+    time_init = time()
+    _, y_est = agent.scan(bel_init, yc, Xc, callback)
+    y_est = y_est.block_until_ready()
+    time_end = time()
+    time_runs.append(time_end - time_init)
+
+
+time_runs_oekf = pd.Series(time_runs, name="EKF-B")
 err_collection_oekf = pd.DataFrame(np.power(y_collection - yhat_collection_oekf, 2).T)
 
 
+# *************************************************************************************************************************************************
+# *************************************************************************************************************************************************
 # ## Online SGD
 
 # In[ ]:
@@ -536,9 +590,16 @@ jnp.sqrt(jnp.power(errs, 2).mean())
 get_ipython().run_cell_magic('time', '', '_, yhat_collection_ogd = jax.vmap(agent.scan, in_axes=(None, 0, 0, None))(bel_init, y_collection, X_collection, callback)\nyhat_collection_ogd = jax.block_until_ready(yhat_collection_ogd)\nyhat_collection_ogd = yhat_collection_ogd.squeeze()\n')
 
 
-# In[ ]:
+time_runs = []
+for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs, desc="OGD"):
+    time_init = time()
+    _, y_est = agent.scan(bel_init, yc, Xc, callback)
+    y_est = y_est.block_until_ready()
+    time_end = time()
+    time_runs.append(time_end - time_init)
+    
 
-
+time_runs_ogd = pd.Series(time_runs, name="OGD")
 err_collection_ogd  = pd.DataFrame(np.power(y_collection - yhat_collection_ogd, 2).T)
 
 
@@ -546,11 +607,10 @@ err_collection_ogd  = pd.DataFrame(np.power(y_collection - yhat_collection_ogd, 
 
 # In[ ]:
 
+# *************************************************************************************************************************************************
+# *************************************************************************************************************************************************
+# *************************************************************************************************************************************************
 
-import seaborn as sns
-
-
-# In[ ]:
 
 
 pd.set_option("display.float_format", lambda x: format(x, "0.4f"))
@@ -562,33 +622,35 @@ df_results = pd.DataFrame({
     "EKF": err_collection_ekf.median(axis=0),
     "OGD": err_collection_ogd.median(axis=0),
     "WLF-MD": err_collection_mekf.median(axis=0),
-    "E-ANN-1": err_collection_ann1.median(axis=0),
-    "O-EKF": err_collection_oekf.median(axis=0),
+    "EKF-IW": err_collection_ann1.median(axis=0),
+    "EKF-B": err_collection_oekf.median(axis=0),
 })
 
 print(df_results.describe())
 
 
-# In[ ]:
-
-
-
-# In[ ]:
-
 
 err_collection = {
     "methods": {
-        "WLF-IMQ": err_collection_wlf,
         "EKF": err_collection_ekf,
+        "EKF-B": err_collection_oekf,
+        "EKF-IW": err_collection_ann1,
         "OGD": err_collection_ogd,
+        "WLF-IMQ": err_collection_wlf,
         "WLF-MD": err_collection_mekf,
-        "E-ANN-1": err_collection_ann1,
-        "O-EKF": err_collection_oekf,
+    },
+    "running-times": {
+        "EKF": time_runs_ekf,
+        "EKF-B": time_runs_oekf,
+        "EKF-IW": time_runs_ann1,
+        "OGD": time_runs_ogd,
+        "WLF-IMQ": time_runs_wlf,
+        "WLF-MD": time_runs_mekf,
     },
     "config": {
         "mask-clean": mask_clean,
         "p_error": p_error,
-    }
+    },
 }
 
 
