@@ -243,6 +243,45 @@ class GaussMeanOutlierMovingObject2D(MovingObject2D):
         return z_next, output
 
 
+class GaussOneSideOutlierMovingObject2D(MovingObject2D):
+    def __init__(
+        self, sampling_period, dynamics_covariance, observation_covariance,
+        outlier_proba, outlier_value,
+    ):
+        super().__init__(sampling_period, dynamics_covariance, observation_covariance)
+        self.outlier_proba = outlier_proba
+        self.outlier_value = outlier_value
+
+
+    def step(self, z_pred, key):
+        key_latent, key_obs, key_corruped = jax.random.split(key, 3)
+        z_next = jax.random.multivariate_normal(
+            key_latent,
+            mean=self.transition_matrix @ z_pred,
+            cov=self.dynamics_covariance,
+        )
+
+        # Corrupt with outliers
+        corrupted = (jax.random.uniform(key_corruped) < self.outlier_proba).astype(jnp.float32)
+        mean_next = self.projection_matrix @ z_next
+        cov_next = self.observation_covariance
+
+        x_next = jax.random.multivariate_normal(
+            key_obs,
+            mean=mean_next,
+            cov=cov_next,
+        )
+
+        x_next = x_next + corrupted * self.outlier_value
+
+        output = {
+            "observed": x_next,
+            "latent": z_next,
+        }
+
+        return z_next, output
+
+
 class UCIDatasets:
     """
     https://github.com/yaringal/DropoutUncertaintyExps/tree/master
