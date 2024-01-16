@@ -19,7 +19,7 @@ class MultiSensorBearingsOnly:
         self.proba_clutter = proba_clutter
         self.transition_matrix = self._build_transition_matrix()
         self.process_covariance = self._build_process_noise_covariance()
-    
+
     def _build_transition_matrix(self):
         sint = jnp.sin(self.turning_rate * self.dt)
         cost = jnp.cos(self.turning_rate * self.dt)
@@ -31,7 +31,7 @@ class MultiSensorBearingsOnly:
             [0, 0, 0, 0, 1]
         ])
         return A
-    
+
     def _build_process_noise_covariance(self):
         M = jnp.array([
             [self.dt ** 3 / 3, self.dt ** 2 / 2],
@@ -43,20 +43,115 @@ class MultiSensorBearingsOnly:
         )
 
         return Q
-    
+
     @partial(jax.jit, static_argnums=(0,))
     def _step_process(self, key, latent):
         latent_next = jax.random.multivariate_normal(
             key=key, mean=self.transition_matrix @ latent, cov=self.process_covariance
         )
         return latent_next
-    
+
     @partial(jax.jit, static_argnums=(0,))
     def _measurement_step(self, key, latent):
         ...
-    
 
-class GaussOutlierMovingObject2D:
+
+class MovingObject2D:
+    def __init__(
+        self, sampling_period, dynamics_covariance, observation_covariance,
+    ):
+        self.sampling_period = sampling_period
+        self.dynamics_covariance = dynamics_covariance * jnp.eye(4)
+        self.observation_covariance = observation_covariance * jnp.eye(2)
+        self.transition_matrix, self.projection_matrix = self._init_dynamics(sampling_period)
+        self.dim_obs, self.dim_latent = self.projection_matrix.shape
+
+    def _init_dynamics(self, sampling_period):
+        transition_matrix = jnp.array([
+            [1, 0, sampling_period, 0],
+            [0, 1, 0, sampling_period],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ])
+
+        projection_matrix = jnp.array([
+            [1, 0, 0, 0],
+            [0, 1, 0, 0],
+        ])
+
+        return transition_matrix, projection_matrix
+
+
+    def step(self, z_prev, key):
+        key_latent, key_obs = jax.random.split(key)
+        z_next = jax.random.multivariate_normal(
+            key_latent,
+            mean=self.transition_matrix @ z_prev,
+            cov=self.dynamics_covariance,
+        )
+        x_next = jax.random.multivariate_normal(
+            key_obs,
+            mean=self.projection_matrix @ z_next,
+            cov=self.observation_covariance,
+        )
+
+        output = {
+            "observed": x_next,
+            "latent": z_next,
+        }
+
+        return z_next, output
+
+
+    def sample(self, key, z0, n_steps):
+        keys = jax.random.split(key, n_steps)
+        _, output = jax.lax.scan(self.step, z0, keys)
+        return output
+
+
+class GaussStMovingObject2D(MovingObject2D):
+    def __init__(
+        self, sampling_period, dynamics_covariance, observation_covariance,
+        dof_observed,
+    ):
+        super().__init__(sampling_period, dynamics_covariance, observation_covariance)
+        self.dof_observed = dof_observed
+
+    def sample_multivariate_t(self, key, mean, covariance, df):
+        key_gamma, key_norm = jax.random.split(key)
+        dim = len(mean)
+        zeros = jnp.zeros(dim)
+        err = jax.random.multivariate_normal(key_norm, mean=zeros, cov=covariance)
+        shape, rate = df / 2, df / 2
+        w  = jax.random.gamma(key_gamma, shape=(1,), a=shape) / rate
+
+        x = mean + err / jnp.sqrt(w)
+        return x
+
+    def step(self, z_prev, key):
+        key_latent, key_obs = jax.random.split(key, 2)
+        z_next = jax.random.multivariate_normal(
+            key_latent,
+            mean=self.transition_matrix @ z_prev,
+            cov=self.dynamics_covariance,
+        )
+
+        x_next = self.sample_multivariate_t(
+            key_obs,
+            mean=self.projection_matrix @ z_next,
+            covariance=self.observation_covariance,
+            df=self.dof_observed,
+        )
+
+        output = {
+            "observed": x_next,
+            "latent": z_next,
+        }
+
+        return z_next, output
+
+
+class GaussOutlierMovingObject2D(MovingObject2D):
     """
     Tracking object moving in 2D space with constant velocity.
     The latent space is taken to be Gaussian and
@@ -67,28 +162,9 @@ class GaussOutlierMovingObject2D:
     def __init__(
         self, sampling_period, dynamics_covariance, observation_covariance, outlier_proba, outlier_scale
     ):
-        self.sampling_period = sampling_period
-        self.dynamics_covariance = dynamics_covariance * jnp.eye(4)
-        self.observation_covariance = observation_covariance * jnp.eye(2)
-        self.transition_matrix, self.projection_matrix = self._init_dynamics(sampling_period)
-        self.dim_obs, self.dim_latent = self.projection_matrix.shape
+        super().__init__(sampling_period, dynamics_covariance, observation_covariance)
         self.outlier_proba = outlier_proba
         self.outlier_scale = outlier_scale
-    
-    def _init_dynamics(self, sampling_period):
-        transition_matrix = jnp.array([
-            [1, 0, sampling_period, 0],
-            [0, 1, 0, sampling_period],
-            [0, 0, 1, 0],
-            [0, 0, 0, 1],
-        ])
-
-        projection_matrix = jnp.array([
-            [1, 0, 0, 0],
-            [0, 1, 0, 0],
-        ])
-
-        return transition_matrix, projection_matrix
 
     def step(self, z_prev, key):
         key_latent, key_obs, key_corruped = jax.random.split(key, 3)
@@ -97,7 +173,7 @@ class GaussOutlierMovingObject2D:
             mean=self.transition_matrix @ z_prev,
             cov=self.dynamics_covariance,
         )
-        
+
         # Corrupt with outliers
         corrupted = (jax.random.uniform(key_corruped) < self.outlier_proba).astype(jnp.float32)
         mean_next = self.projection_matrix @ z_next
@@ -105,14 +181,12 @@ class GaussOutlierMovingObject2D:
             self.observation_covariance * self.outlier_scale * corrupted +
             self.observation_covariance * (1 - corrupted)
         )
-        
+
         x_next = jax.random.multivariate_normal(
             key_obs,
             mean=mean_next,
             cov=cov_next,
         )
-        
-        # x_next = corrupted * mean_next * self.outlier_scale + (1 - corrupted) * x_next
 
         output = {
             "observed": x_next,
@@ -120,14 +194,9 @@ class GaussOutlierMovingObject2D:
         }
 
         return z_next, output
-    
-    def sample(self, key, z0, n_steps):
-        keys = jax.random.split(key, n_steps)
-        _, output = jax.lax.scan(self.step, z0, keys)
-        return output
 
 
-class GaussMeanOutlierMovingObject2D:
+class GaussMeanOutlierMovingObject2D(MovingObject2D):
     """
     Tracking object moving in 2D space with constant velocity.
     The latent space is taken to be Gaussian and
@@ -138,28 +207,9 @@ class GaussMeanOutlierMovingObject2D:
     def __init__(
         self, sampling_period, dynamics_covariance, observation_covariance, outlier_proba, outlier_scale
     ):
-        self.sampling_period = sampling_period
-        self.dynamics_covariance = dynamics_covariance * jnp.eye(4)
-        self.observation_covariance = observation_covariance * jnp.eye(2)
-        self.transition_matrix, self.projection_matrix = self._init_dynamics(sampling_period)
-        self.dim_obs, self.dim_latent = self.projection_matrix.shape
+        super().__init__(sampling_period, dynamics_covariance, observation_covariance)
         self.outlier_proba = outlier_proba
         self.outlier_scale = outlier_scale
-    
-    def _init_dynamics(self, sampling_period):
-        transition_matrix = jnp.array([
-            [1, 0, sampling_period, 0],
-            [0, 1, 0, sampling_period],
-            [0, 0, 1, 0],
-            [0, 0, 0, 1],
-        ])
-
-        projection_matrix = jnp.array([
-            [1, 0, 0, 0],
-            [0, 1, 0, 0],
-        ])
-
-        return transition_matrix, projection_matrix
 
     def step(self, z_prev, key):
         key_latent, key_obs, key_corruped = jax.random.split(key, 3)
@@ -168,21 +218,21 @@ class GaussMeanOutlierMovingObject2D:
             mean=self.transition_matrix @ z_prev,
             cov=self.dynamics_covariance,
         )
-        
+
         # Corrupt with outliers
         corrupted = (jax.random.uniform(key_corruped) < self.outlier_proba).astype(jnp.float32)
         mean_next = (
             self.projection_matrix @ z_next * (1 - corrupted) +
             self.projection_matrix @ z_next * corrupted * self.outlier_scale
-        )        
+        )
         cov_next = self.observation_covariance
-        
+
         x_next = jax.random.multivariate_normal(
             key_obs,
             mean=mean_next,
             cov=cov_next,
         )
-        
+
         # x_next = corrupted * mean_next * self.outlier_scale + (1 - corrupted) * x_next
 
         output = {
@@ -191,11 +241,6 @@ class GaussMeanOutlierMovingObject2D:
         }
 
         return z_next, output
-    
-    def sample(self, key, z0, n_steps):
-        keys = jax.random.split(key, n_steps)
-        _, output = jax.lax.scan(self.step, z0, keys)
-        return output
 
 
 class UCIDatasets:
@@ -222,7 +267,7 @@ class UCIDatasets:
             "wine-quality-red",
             "yacht",
         ]
-    
+
     def load_dataset(self, dataset):
         if dataset not in self.datasets:
             raise ValueError(f"Dataset {dataset} not found")
@@ -235,9 +280,9 @@ class UCIDatasets:
             path = self.base_url.format(dataset=dataset)
             df = pd.read_csv(path, sep=r"\s+", header=None)
             df.to_csv(os.path.join(self.root_dir, dataset), index=False, sep="\t")
-            
+
         return df
-    
+
     def sample_one_sided_noisy_dataset(
             self, dataset_name, p_error, v_error=10, prop_warmup=0.1, seed=314
     ):
