@@ -140,6 +140,7 @@ print("-" * 20, "KF", "-" * 20)
 # In[13]:
 
 
+@jax.jit
 def filter_kf(log_lr, measurements, covariates):
     lr = jnp.exp(log_lr)
     nsteps = len(measurements)
@@ -194,7 +195,7 @@ times = []
 
 for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs): 
     tinit = time()
-    run = jax.jit(filter_kf)(log_lr, y, X)
+    run = filter_kf(log_lr, y, X)
     run = jax.block_until_ready(run)
     tend = time()
     
