@@ -246,15 +246,16 @@ class GaussMeanOutlierMovingObject2D(MovingObject2D):
 class GaussOneSideOutlierMovingObject2D(MovingObject2D):
     def __init__(
         self, sampling_period, dynamics_covariance, observation_covariance,
-        outlier_proba, outlier_value,
+        outlier_proba, outlier_minval, outlier_maxval
     ):
         super().__init__(sampling_period, dynamics_covariance, observation_covariance)
         self.outlier_proba = outlier_proba
-        self.outlier_value = outlier_value
+        self.outlier_minval = outlier_minval
+        self.outlier_maxval = outlier_maxval
 
 
     def step(self, z_pred, key):
-        key_latent, key_obs, key_corruped = jax.random.split(key, 3)
+        key_latent, key_obs, key_corruped, key_value_corrupted = jax.random.split(key, 4)
         z_next = jax.random.multivariate_normal(
             key_latent,
             mean=self.transition_matrix @ z_pred,
@@ -272,7 +273,10 @@ class GaussOneSideOutlierMovingObject2D(MovingObject2D):
             cov=cov_next,
         )
 
-        x_next = x_next + corrupted * self.outlier_value
+        corrupted_value = jax.random.uniform(
+            key_value_corrupted, minval=self.outlier_minval, maxval=self.outlier_maxval
+        )
+        x_next = x_next + corrupted * corrupted_value
 
         output = {
             "observed": x_next,
