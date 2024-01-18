@@ -3,18 +3,17 @@
 
 # # UCI regression with outliers
 
-import os
 import sys
 import jax
 import toml
 import optax
 import pickle
 import datagen
-import pandas as pd
 import numpy as np
 import jax.numpy as jnp
 import flax.linen as nn
 
+from tqdm import tqdm
 from functools import partial
 from rebayes_mini.methods import replay_sgd
 from rebayes_mini.methods import robust_filter as rkf
@@ -28,9 +27,6 @@ with open(config_path, "r") as f:
     config = toml.load(f)
 
 uci = datagen.UCIDatasets("./data")
-
-init_points = 10
-n_iter = 15
 
 dataset_name = config["metadata"]["dataset-name"]
 print("*" * 80)
@@ -81,9 +77,8 @@ def create_collection_datsets(p_error, n_runs, v_error=50, seed_init=314):
 
 
 @jax.jit
-def filter_kf(log_lr, measurements, covariates):
+def filter_kf(log_lr, params_init, measurements, covariates):
     lr = jnp.exp(log_lr)
-    nsteps = len(measurements)
     agent = rkf.ExtendedKalmanFilterIMQ(
         latent_fn, measurement_fn,
         dynamics_covariance=Q,
@@ -93,14 +88,14 @@ def filter_kf(log_lr, measurements, covariates):
     
     init_bel = agent.init_bel(params_init, cov=lr)
     callback = partial(callback_fn, applyfn=agent.vobs_fn)
-    bel, yhat_pp = agent.scan(init_bel, measurements, covariates, callback_fn=callback)
+    _, yhat_pp = agent.scan(init_bel, measurements, covariates, callback_fn=callback)
     
     # out = (agent, bel)
     return yhat_pp.squeeze()
 
 
 @jax.jit
-def filter_kfb(log_lr, alpha, beta, n_inner, measurements, covariates):
+def filter_kfb(log_lr, alpha, beta, n_inner, params_init, measurements, covariates):
     lr = jnp.exp(log_lr)
     n_inner = n_inner.astype(int)
     
@@ -116,13 +111,13 @@ def filter_kfb(log_lr, alpha, beta, n_inner, measurements, covariates):
     
     init_bel = agent.init_bel(params_init, cov=lr)
     callback = partial(callback_fn, applyfn=agent.vobs_fn)
-    bel, yhat_pp = agent.scan(init_bel, measurements, covariates, callback_fn=callback)
+    _, yhat_pp = agent.scan(init_bel, measurements, covariates, callback_fn=callback)
     
     return yhat_pp.squeeze()
 
 
 @jax.jit
-def filter_kfiw(log_lr, noise_scaling, n_inner, measurements, covariates):
+def filter_kfiw(log_lr, noise_scaling, n_inner, params_init, measurements, covariates):
     lr = jnp.exp(log_lr)
     n_inner = n_inner.astype(int)
     
@@ -142,7 +137,7 @@ def filter_kfiw(log_lr, noise_scaling, n_inner, measurements, covariates):
 
 
 @jax.jit
-def filter_wlfimq(log_lr, soft_threshold, measurements, covariates):
+def filter_wlfimq(log_lr, soft_threshold, params_init, measurements, covariates):
     lr = jnp.exp(log_lr)
     nsteps = len(measurements)
     agent = rkf.ExtendedKalmanFilterIMQ(
@@ -156,12 +151,11 @@ def filter_wlfimq(log_lr, soft_threshold, measurements, covariates):
     callback = partial(callback_fn, applyfn=agent.vobs_fn)
     _, yhat_pp = agent.scan(init_bel, measurements, covariates, callback_fn=callback)
     
-    # out = (agent, bel)
     return yhat_pp.squeeze()
 
 
 @jax.jit
-def filter_wlfmd(log_lr, threshold, measurements, covariates):
+def filter_wlfmd(log_lr, threshold, params_init, measurements, covariates):
     lr = jnp.exp(log_lr)
     agent = rkf.ExtendedKalmanFilterMD(
         latent_fn, measurement_fn,
@@ -181,7 +175,7 @@ def filter_wlfmd(log_lr, threshold, measurements, covariates):
 
 
 @jax.jit
-def filter_ogd(log_lr, n_inner, measurements, covariates):
+def filter_ogd(log_lr, n_inner, params_init, measurements, covariates):
     lr = jnp.exp(log_lr)
     n_inner = n_inner.astype(int)
     
@@ -236,22 +230,41 @@ p_errors_collection = {}
 p_error = 0.1
 
 p_errors = np.arange(0, 0.5, 0.05)
-p100 = int(100 * p_error)
-X_collection, y_collection, ix_clean_collection = create_collection_datsets(p_error, n_runs, v_error=50, seed_init=314)
 
-p_errors_collection[p100] = {}
-for method in hyperparams:
-    print(method)
-    filterfn = fileter_fns[method]
-    hparams = hyperparams[method]
+@partial(jax.jit, static_argnames=("model", "filterfn"))
+def load_and_run(key, y, X, model, filterfn):
+    params_init = model.init(key, X[:1])
+    yhat_pp = filterfn(**hparams, params_init=params_init, measurements=y, covariates=X)
+    errs = (y - yhat_pp) ** 2
+    return errs
 
-    errs_collection = []
-    for X, y in toml(zip(X_collection, y_collection), total=n_runs, leave=False):
-        params_init = model.init(key, X[:1])
-        yhat_pp = filterfn(**hparams, measurements=y, covariates=X)
-        errs = (y - yhat_pp) ** 2
-        errs_collection.append(errs)
-    errs_collection = np.array(errs_collection)
-    p_errors_collection[p100][method] = errs_collection
+
+for p_error in tqdm(p_errors[:2]):
+    p100 = int(100 * p_error)
+    X_collection, y_collection, ix_clean_collection = create_collection_datsets(p_error, n_runs, v_error=50, seed_init=314)
+
+    p_errors_collection[p100] = {}
+    for method in (pbar := tqdm(hyperparams, leave=False)):
+        pbar.set_description(f"Method: {method}")
+        filterfn = fileter_fns[method]
+        hparams = hyperparams[method]
+
+        errs_collection = []
+        for X, y in zip(X_collection, y_collection):
+            errs = load_and_run(key, y, X, model, filterfn)
+            errs_collection.append(errs)
+        errs_collection = np.array(errs_collection)
+        p_errors_collection[p100][method] = errs_collection
 
 print(jax.tree_map(np.shape, p_errors_collection))
+
+
+res = {
+    "p_errors_collection": p_errors_collection,
+    "config": config,
+}
+
+
+filename = f"./results/regression-stress-{dataset_name}.pkl"
+with open(filename, "wb") as f:
+    pickle.dump(res, f)
