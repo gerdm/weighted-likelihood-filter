@@ -1,48 +1,39 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# # UCI regression 
-
-# In[479]:
+# # UCI regression with outliers
 
 import sys
-
 import jax
 import optax
 import pickle
-import numpy as np
-import pandas as pd
-import flax.linen as nn
-import jax.numpy as jnp
-
 import datagen
+import pandas as pd
+import numpy as np
+import jax.numpy as jnp
+import flax.linen as nn
+
 from tqdm import tqdm
 from time import time
 from functools import partial
 from bayes_opt import BayesianOptimization
-from jax.sharding import PositionalSharding
 from rebayes_mini.methods import replay_sgd
-from rebayes_mini.methods import gauss_filter as gfilter
-from rebayes_mini.methods import robust_filter as rfilter
-from rebayes_mini.methods import generalised_bayes_filter as gbfilter
+from rebayes_mini.methods import robust_filter as rkf
 
 
+# Load config
 dataset_name = sys.argv[1]
 p_error = float(sys.argv[2]) / 100
 n_runs = int(sys.argv[3])
 
-
-devices = jax.devices()
-sharding = PositionalSharding(devices)
-
-
-
 uci = datagen.UCIDatasets("./data")
-print("-" * 80)
-print(f"Dataset: {dataset_name}")
-print(f"p_error: {p_error}")
-print(f"n_runs: {n_runs}")
 
+init_points = 10
+n_iter = 15
+
+print("*" * 80)
+print(f"Dataset: {dataset_name}")
+# ## Load dataset
 
 noise_type = "target" # or "covariate"
 
@@ -71,15 +62,18 @@ for i in range(n_runs):
     ix_clean_collection.append(ix_clean)
 
 
-# In[928]:
+# In[5]:
 
-
+n_samples = y.shape[0]
 X_collection = jnp.array(X_collection)
 y_collection = jnp.array(y_collection)
 mask_clean = np.array(ix_clean_collection).T
 X_collection.shape
 
-# In[929]:
+
+# ## Setup
+
+# In[6]:
 
 
 class MLP(nn.Module):
@@ -91,9 +85,7 @@ class MLP(nn.Module):
         return x
 
 
-# # Setup
-
-# In[930]:
+# In[7]:
 
 
 def callback_fn(bel, bel_pred, y, x, applyfn):
@@ -101,562 +93,574 @@ def callback_fn(bel, bel_pred, y, x, applyfn):
     return yhat
 
 
-# In[931]:
+# In[8]:
 
 
 y, X = y_collection[0], X_collection[0]
 ix_clean = ix_clean_collection[0]
 
 
-# In[932]:
+# In[9]:
 
 
 Q = 0.0
 observation_covariance = 1.0
 
 
-# In[933]:
+# In[10]:
 
 
 key = jax.random.PRNGKey(314)
 model = MLP()
+def latent_fn(x): return x
+measurement_fn = model.apply
 params_init = model.init(key, X[:1])
 
 
-# In[934]:
+# # Run experiments
+
+# In[11]:
 
 
-X_collection.shape
-
-# *************************************************************************************************************************************************
-# *************************************************************************************************************************************************
-# ## EKF
-
-# In[935]:
+time_methods = {}
+hist_methods = {}
+configs = {}
 
 
-def filter_ekf(log_lr):
-    lr = np.exp(log_lr)
-    agent = gfilter.ExtendedKalmanFilter(
-        lambda x: x,
-        model.apply,
+# In[12]:
+
+
+observation_covariance = jnp.eye(1) * 1.0
+
+
+# ## Kalman Filter
+print("-" * 20, "KF", "-" * 20)
+
+# In[13]:
+
+
+def filter_kf(log_lr, measurements, covariates):
+    lr = jnp.exp(log_lr)
+    nsteps = len(measurements)
+    agent = rkf.ExtendedKalmanFilterIMQ(
+        latent_fn, measurement_fn,
         dynamics_covariance=Q,
-        observation_covariance=observation_covariance  * jnp.eye(1),
-    )
-
-    bel_init = agent.init_bel(params_init, cov=lr)
-    callback = partial(callback_fn, applyfn=agent.vobs_fn)
-    bel_imq, yhat_pp = agent.scan(bel_init, y, X, callback_fn=callback)
-    out = (agent, bel_imq)
-    return yhat_pp.squeeze(), out
-
-def opt_step(log_lr):
-    res = -jnp.power(filter_ekf(log_lr)[0] - y, 2)
-    res = np.median(res)
-    
-    if np.isnan(res) or np.isinf(res):
-        res = -1e+6
-    
-    return res
-
-
-# In[936]:
-
-
-get_ipython().run_cell_magic('time', '', 'bo = BayesianOptimization(\n    opt_step,\n    pbounds={\n        "log_lr": (-5, 0),\n    },\n    verbose=1,\n    random_state=314,\n    allow_duplicate_points=True\n)\n\nbo.maximize(init_points=5, n_iter=5)\n')
-
-
-# In[ ]:
-
-
-get_ipython().run_cell_magic('time', '', '\nlr = np.exp(bo.max["params"]["log_lr"])\nagent = gfilter.ExtendedKalmanFilter(\n    lambda x: x,\n    model.apply,\n    dynamics_covariance=Q,\n    observation_covariance=1.0 * jnp.eye(1),\n)\n\nbel_init = agent.init_bel(params_init, cov=lr)\n\ncallback = partial(callback_fn, applyfn=agent.vobs_fn)\nscanfn = jax.vmap(agent.scan, in_axes=(None, 0, 0, None))\nres = scanfn(bel_init, y_collection, X_collection, callback)\n\nres = jax.block_until_ready(res)\nstate_final_collection, yhat_collection_ekf = res\nyhat_collection_ekf = yhat_collection_ekf.squeeze()\n')
-
-
-time_runs = []
-for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs, desc="EKF"):
-    time_init = time()
-    _, y_est = agent.scan(bel_init, yc, Xc, callback)
-    y_est = y_est.block_until_ready()
-    time_end = time()
-    time_runs.append(time_end - time_init)
-
-
-# In[ ]:
-
-time_runs_ekf = pd.Series(time_runs, name="EKF")
-err_collection_ekf = pd.DataFrame(np.power(y_collection - yhat_collection_ekf, 2).T)
-
-# *************************************************************************************************************************************************
-# *************************************************************************************************************************************************
-# ## WLF-IMQ
-
-# ### Hparam choice
-
-# In[ ]:
-
-
-def filter_imqf(soft_threshold, log_lr):
-    lr = np.exp(log_lr)
-    agent = gbfilter.IMQFilter(
-        model.apply, dynamics_covariance=Q,
         observation_covariance=observation_covariance,
-        soft_threshold=soft_threshold
+        soft_threshold=1e8,
     )
-
-    bel_init = agent.init_bel(params_init, cov=lr)
-    callback = partial(callback_fn, applyfn=agent.link_fn)
-    bel_imq, yhat_pp = agent.scan(bel_init, y, X, callback_fn=callback)
-    out = (agent, bel_imq)
-    return yhat_pp.squeeze(), out
-
-def opt_step(soft_threshold, log_lr):
-    # res = -jnp.power(filter_imqf(soft_threshold, log_lr)[0] - y, 2)[ix_clean].mean()
-    res = -jnp.power(filter_imqf(soft_threshold, log_lr)[0] - y, 2)
-    res = jnp.median(res)
     
-    if np.isnan(res) or np.isinf(res):
-        res = -1e+6
+    init_bel = agent.init_bel(params_init, cov=lr)
+    callback = partial(callback_fn, applyfn=agent.vobs_fn)
+    bel, yhat_pp = agent.scan(init_bel, measurements, covariates, callback_fn=callback)
     
-    return res
+    # out = (agent, bel)
+    return yhat_pp.squeeze()
 
 
-# In[ ]:
+@jax.jit
+def opt_step(log_lr):
+    yhat_pp = filter_kf(log_lr, y, X)
+    err = jnp.power(yhat_pp - y, 2)
+    err = jnp.median(err)
+    err = jax.lax.cond(jnp.isnan(err), lambda: 1e6, lambda: err)
+    return -err
 
 
-get_ipython().run_cell_magic('time', '', 'bo = BayesianOptimization(\n    opt_step,\n    pbounds={\n        "soft_threshold": (1e-6, 15),\n        "log_lr": (-5, 0),\n    },\n    verbose=1,\n    random_state=314,\n    allow_duplicate_points=True\n)\n\nbo.maximize(init_points=5, n_iter=5)\n')
+# In[14]:
 
 
-# ### Eval
-
-# In[ ]:
-
-
-soft_threshold = bo.max["params"]["soft_threshold"]
-lr = np.exp(bo.max["params"]["log_lr"])
-
-agent = gbfilter.IMQFilter(
-    model.apply,
-    dynamics_covariance=0.0,
-    observation_covariance=1.0,
-    soft_threshold=soft_threshold
+bo = BayesianOptimization(
+    opt_step,
+    pbounds={
+        "log_lr": (-5, 0),
+    },
+    random_state=314,
+    allow_duplicate_points=True
 )
 
+bo.maximize(init_points=init_points, n_iter=n_iter)
 
-# In[ ]:
 
+# In[15]:
 
-get_ipython().run_cell_magic('time', '', 'bel_init = agent.init_bel(params_init, cov=lr)\ncallback = partial(callback_fn, applyfn=agent.link_fn)\n_, yhat_collection_wlf = jax.vmap(agent.scan, in_axes=(None, 0, 0, None))(bel_init, y_collection, X_collection, callback)\nyhat_collection_wlf = jax.block_until_ready(yhat_collection_wlf.squeeze())\n')
 
-
-# In[ ]:
-
-
-time_runs = []
-for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs):
-    time_init = time()
-    _, y_est = agent.scan(bel_init, yc, Xc, callback)
-    y_est = y_est.block_until_ready()
-    time_end = time()
-    time_runs.append(time_end - time_init)
-
-
-time_runs_wlf = pd.Series(time_runs, name="WLF-IMQ")
-err_collection_wlf = pd.DataFrame(np.power(y_collection - yhat_collection_wlf, 2).T)
-
-# *************************************************************************************************************************************************
-# *************************************************************************************************************************************************
-# ## Inverse-Wishard EKF
-# (Agamenoni 2012)
-
-# ### Hparam choice
-
-# In[ ]:
-
-
-def filter_rkf(noise_scaling, log_lr):
-    lr = np.exp(log_lr)
-    agent_rekf = rfilter.ExtendedRobustKalmanFilter(
-        lambda x: x, model.apply, dynamics_covariance=Q,
-        prior_observation_covariance=observation_covariance * jnp.eye(1),
-        noise_scaling=noise_scaling,
-        n_inner=2
-    )
-    
-    bel_init = agent_rekf.init_bel(params_init, cov=lr)
-    callback = partial(callback_fn, applyfn=agent_rekf.vobs_fn)
-    bel_rekf, yhat_pp = agent_rekf.scan(bel_init, y, X, callback_fn=callback)
-    out = (agent_rekf, bel_rekf)
-    
-    return yhat_pp.squeeze(), out
-
-
-# In[ ]:
-
-
-def opt_step(noise_scaling, log_lr):
-    # res = -jnp.power(filter_rkf(noise_scaling, log_lr)[0] - y, 2)[ix_clean].mean()
-    res = -jnp.power(filter_rkf(noise_scaling, log_lr)[0] - y, 2)
-    res = jnp.median(res)
-    if np.isnan(res) or np.isinf(res):
-        res = -1e+6
-    
-    return res
-
-
-# In[ ]:
-
-
-get_ipython().run_cell_magic('time', '', 'bo = BayesianOptimization(\n    opt_step,\n    pbounds={\n        "noise_scaling": (1e-6, 15),\n        "log_lr": (-5, 0)\n    },\n    verbose=1,\n    random_state=314,\n    allow_duplicate_points=True\n)\n\nbo.maximize(init_points=5, n_iter=5)\n')
-
-
-# ### Eval
-
-# In[ ]:
-
-
-noise_scaling = bo.max["params"]["noise_scaling"]
-lr = np.exp(bo.max["params"]["log_lr"])
-
-agent = rfilter.ExtendedRobustKalmanFilter(
-    lambda x: x,
-    model.apply,
-    dynamics_covariance=0.0,
-    prior_observation_covariance=1.0 * jnp.eye(1),
-    n_inner=2,
-    noise_scaling=noise_scaling,
-)
-
-
-# In[ ]:
-
-
-get_ipython().run_cell_magic('time', '', 'bel_init = agent.init_bel(params_init, cov=lr)\ncallback = partial(callback_fn, applyfn=agent.vobs_fn)\n_, yhat_collection_ann1 = jax.vmap(agent.scan, in_axes=(None, 0, 0, None))(bel_init, y_collection, X_collection, callback)\nyhat_collection_ann1 = yhat_collection_ann1.squeeze()\n')
-
-
-time_runs = []
-for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs, desc="EKF-IW"):
-    time_init = time()
-    _, y_est = agent.scan(bel_init, yc, Xc, callback)
-    y_est = y_est.block_until_ready()
-    time_end = time()
-    time_runs.append(time_end - time_init)
-    
-
-time_runs_ann1 = pd.Series(time_runs, name="EKF-IW")
-err_collection_ann1 = pd.DataFrame(np.power(y_collection - yhat_collection_ann1, 2).T)
-
-# *************************************************************************************************************************************************
-# *************************************************************************************************************************************************
-# ## WLF-MD
-# Weighted likelihood filter with Mahalanobis distance thresholding weighting function
-
-# ### Hparam section
-
-# In[ ]:
-
-
-def filter_mah_ekf(log_lr, threshold):
-    lr = np.exp(log_lr)
-    agent_mekf = rfilter.ExtendedThresholdedKalmanFilter(
-        lambda x: x, model.apply,
-        dynamics_covariance=Q,
-        observation_covariance=observation_covariance * jnp.eye(1),
-        threshold=threshold
-    )
-    
-    bel_init = agent_mekf.init_bel(params_init, cov=lr)
-    callback = partial(callback_fn, applyfn=agent_mekf.vobs_fn)
-    
-    bel_mekf, yhat_pp = agent_mekf.scan(bel_init, y, X, callback_fn=callback)
-    out = (agent_mekf, bel_mekf)
-    return yhat_pp.squeeze(), out
-
-def opt_step(log_lr, threshold):
-    # res = -jnp.power(filter_rkf(noise_scaling, log_lr)[0] - y, 2)[ix_clean].mean()
-    res = -jnp.power(filter_mah_ekf(noise_scaling, log_lr)[0] - y, 2)
-    res = jnp.median(res)
-    if np.isnan(res) or np.isinf(res):
-        res = -1e+6
-    
-    return res
-
-
-# In[ ]:
-
-
-get_ipython().run_cell_magic('time', '', 'bo = BayesianOptimization(\n    opt_step,\n    pbounds={\n        "threshold": (1e-6, 15),\n        "log_lr": (-5, 0)\n    },\n    verbose=1,\n    random_state=314,\n    allow_duplicate_points=True\n)\n\nbo.maximize(init_points=5, n_iter=5)\n')
-
-
-# ### Eval
-
-# In[ ]:
-
-
-threshold = bo.max["params"]["threshold"]
-lr = np.exp(bo.max["params"]["log_lr"])
-
-agent = rfilter.ExtendedThresholdedKalmanFilter(
-    lambda x: x,
-    model.apply,
-    dynamics_covariance=0.0,
-    observation_covariance=1.0 * jnp.eye(1),
-    threshold=threshold,
-)
-
-
-# In[ ]:
-
-
-get_ipython().run_cell_magic('time', '', 'bel_init = agent.init_bel(params_init, cov=lr)\nbel_init = jax.device_put(bel_init, sharding.replicate(0))\ncallback = partial(callback_fn, applyfn=agent.vobs_fn)\nscanfn = jax.jit(jax.vmap(agent.scan, in_axes=(None, 0, 0, None)), static_argnames=("callback_fn",))\n\n_, yhat_collection_mekf = scanfn(bel_init, y_collection, X_collection, callback)\nyhat_collection_mekf = jax.block_until_ready(yhat_collection_mekf)\nyhat_collection_mekf = yhat_collection_mekf.squeeze()\n')
-
-
-
-time_runs = []
-for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs, desc="WLF-MD"):
-    time_init = time()
-    _, y_est = agent.scan(bel_init, yc, Xc, callback)
-    y_est = y_est.block_until_ready()
-    time_end = time()
-    time_runs.append(time_end - time_init)
-
-
-time_runs_mekf = pd.Series(time_runs, name="WLF-MD")
-err_collection_mekf = pd.DataFrame(np.power(y_collection - yhat_collection_mekf, 2).T)
-
-# *************************************************************************************************************************************************
-# *************************************************************************************************************************************************
-# ## O-EKF
-# Outlier-based extended Kalman filter
-
-
-def filter_oekf(log_lr, alpha, beta):
-    """
-    Outlier ekf
-    """
-    lr = np.exp(log_lr)
-    agent_wang2018 = rfilter.OutlierDetectionExtendedKalmanFilter(
-        lambda x: x, model.apply,
-        dynamics_covariance=Q,
-        observation_covariance=observation_covariance * jnp.eye(1),
-        alpha=alpha,
-        beta=beta,
-        tol_inlier=1e-7,
-        # tol_inner=1e-3 # refactor
-        n_inner=2
-    )
-    
-    bel_init = agent_wang2018.init_bel(params_init, cov=lr)
-    callback = partial(callback_fn, applyfn=agent_wang2018.vobs_fn)
-    
-    bel_oekf, yhat_pp = agent_wang2018.scan(bel_init, y, X, callback_fn=callback)
-    out = (agent_wang2018, bel_oekf)
-    return yhat_pp.squeeze(), out
-
-
-def opt_step(log_lr, alpha, beta):
-    res = -jnp.power(filter_oekf(log_lr, alpha, beta)[0] - y, 2)
-    res = jnp.median(res)
-    if np.isnan(res):
-        res = -1e+6
-    
-    return res
-
-
-# In[39]:
-
-
-get_ipython().run_cell_magic('time', '', 'bo = BayesianOptimization(\n    opt_step,\n    pbounds={\n        "log_lr": (-5, 0),\n        "alpha": (0.0, 5.0),\n        "beta": (0.0, 5.0)\n    },\n    random_state=314,\n    verbose=1\n)\nbo.maximize(init_points=5, n_iter=5)\n')
-
-
-# ### Eval
-
-# In[42]:
-
-
+method = "KF"
 log_lr = bo.max["params"]["log_lr"]
-lr_oekf = np.exp(log_lr)
-alpha = bo.max["params"]["alpha"]
-beta = bo.max["params"]["beta"]
+configs[method] = bo.max["params"]
 
-agent = rfilter.OutlierDetectionExtendedKalmanFilter(
-        lambda x: x, model.apply,
+hist_bel = []
+times = []
+
+for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs): 
+    tinit = time()
+    run = jax.jit(filter_kf)(log_lr, y, X)
+    run = jax.block_until_ready(run)
+    tend = time()
+    
+    hist_bel.append(run)
+    times.append(tend - tinit)
+
+hist_bel = np.stack(hist_bel)
+
+hist_methods[method] = hist_bel
+time_methods[method] = times
+
+
+# ## KF-B
+print("-" * 20, "KF-B", "-" * 20)
+
+# In[16]:
+
+
+@jax.jit
+def filter_kfb(log_lr, alpha, beta, n_inner, measurements, covariates):
+    lr = jnp.exp(log_lr)
+    n_inner = n_inner.astype(int)
+    
+    agent = rkf.ExtendedKalmanFilterBernoulli(
+        latent_fn, measurement_fn,
         dynamics_covariance=Q,
-        observation_covariance=observation_covariance * jnp.eye(1),
+        observation_covariance=observation_covariance,
         alpha=alpha,
         beta=beta,
         tol_inlier=1e-7,
-        # tol_inner=1e-3 # refactor
-        n_inner=2
+        n_inner=n_inner
     )
+    
+    init_bel = agent.init_bel(params_init, cov=lr)
+    callback = partial(callback_fn, applyfn=agent.vobs_fn)
+    bel, yhat_pp = agent.scan(init_bel, measurements, covariates, callback_fn=callback)
+    
+    return yhat_pp.squeeze()
 
 
-# In[43]:
+@jax.jit
+def opt_step(log_lr, alpha, beta, n_inner):
+    yhat_pp = filter_kfb(log_lr, alpha, beta, n_inner, y, X)
+    err = jnp.power(yhat_pp - y, 2)
+    err = jnp.median(err)
+    err = jax.lax.cond(jnp.isnan(err), lambda: 1e6, lambda: err)
+    return -err
 
 
-get_ipython().run_cell_magic('time', '', 'bel_init = agent.init_bel(params_init, cov=lr)\nbel_init = jax.device_put(bel_init, sharding.replicate(0))\ncallback = partial(callback_fn, applyfn=agent.vobs_fn)\nscanfn = jax.jit(jax.vmap(agent.scan, in_axes=(None, 0, 0, None)), static_argnames=("callback_fn",))\n\n_, yhat_collection_oekf = scanfn(bel_init, y_collection, X_collection, callback)\nyhat_collection_oekf = jax.block_until_ready(yhat_collection_oekf)\nyhat_collection_oekf = yhat_collection_oekf.squeeze()\n')
+# In[17]:
 
 
-time_runs = []
-for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs, desc="EKF-B"):
-    time_init = time()
-    _, y_est = agent.scan(bel_init, yc, Xc, callback)
-    y_est = y_est.block_until_ready()
-    time_end = time()
-    time_runs.append(time_end - time_init)
+bo = BayesianOptimization(
+    opt_step,
+    pbounds={
+        "log_lr": (-5, 0),
+        "alpha": (0.0, 5.0),
+        "beta": (0.0, 5.0),
+
+        "n_inner":  (1, 10),
+    },
+    random_state=314,
+    
+)
+bo.maximize(init_points=init_points, n_iter=n_iter)
 
 
-time_runs_oekf = pd.Series(time_runs, name="EKF-B")
-err_collection_oekf = pd.DataFrame(np.power(y_collection - yhat_collection_oekf, 2).T)
+# In[18]:
 
 
-# *************************************************************************************************************************************************
-# *************************************************************************************************************************************************
-# ## Online SGD
+method = "KF-B"
+configs[method] = bo.max["params"]
 
-# In[ ]:
+hist_bel = []
+times = []
+
+for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs): 
+    tinit = time()
+    run = filter_kfb(**bo.max["params"], measurements=y, covariates=X)
+    run = jax.block_until_ready(run)
+    tend = time()
+    
+    hist_bel.append(run)
+    times.append(tend - tinit)
+
+hist_bel = np.stack(hist_bel)
+
+hist_methods[method] = hist_bel
+time_methods[method] = times
+
+
+# ## KF-IW
+print("-" * 20, "KF-IW", "-" * 20)
+
+# In[19]:
+
+
+@jax.jit
+def filter_kfiw(log_lr, noise_scaling, n_inner, measurements, covariates):
+    lr = jnp.exp(log_lr)
+    n_inner = n_inner.astype(int)
+    
+    agent = rkf.ExtendedKalmanFilterInverseWishart(
+        latent_fn, measurement_fn,
+        dynamics_covariance=Q,
+        prior_observation_covariance=observation_covariance,
+        n_inner=n_inner,
+        noise_scaling=noise_scaling
+    )
+    
+    init_bel = agent.init_bel(params_init, cov=lr)
+    callback = partial(callback_fn, applyfn=agent.vobs_fn)
+    bel, yhat_pp = agent.scan(init_bel, measurements, covariates, callback_fn=callback)
+    
+    return yhat_pp.squeeze()
+
+
+@jax.jit
+def opt_step(log_lr, noise_scaling, n_inner):
+    yhat_pp = filter_kfiw(log_lr, noise_scaling, n_inner, y, X)
+    err = jnp.power(yhat_pp - y, 2)
+    err = jnp.median(err)
+    err = jax.lax.cond(jnp.isnan(err), lambda: 1e6, lambda: err)
+    return -err
+
+
+# In[20]:
+
+
+bo = BayesianOptimization(
+    opt_step,
+    pbounds={
+        "log_lr": (-5, 0),
+        "noise_scaling": (1e-6, 20),
+        "n_inner":  (1, 10),
+    },
+    random_state=314,
+)
+bo.maximize(init_points=init_points, n_iter=n_iter)
+
+
+# In[21]:
+
+
+method = "KF-IW"
+configs[method] = bo.max["params"]
+
+hist_bel = []
+times = []
+
+for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs): 
+    tinit = time()
+    run = filter_kfiw(**bo.max["params"], measurements=y, covariates=X)
+    run = jax.block_until_ready(run)
+    tend = time()
+    
+    hist_bel.append(run)
+    times.append(tend - tinit)
+
+hist_bel = np.stack(hist_bel)
+
+hist_methods[method] = hist_bel
+time_methods[method] = times
+
+
+# ## WLF-IMQ
+print("-" * 20, "WLF-IMQ", "-" * 20)
+
+# In[22]:
+
+
+@jax.jit
+def filter_wlfimq(log_lr, soft_threshold, measurements, covariates):
+    lr = jnp.exp(log_lr)
+    nsteps = len(measurements)
+    agent = rkf.ExtendedKalmanFilterIMQ(
+        latent_fn, measurement_fn,
+        dynamics_covariance=Q,
+        observation_covariance=observation_covariance,
+        soft_threshold=soft_threshold,
+    )
+    
+    init_bel = agent.init_bel(params_init, cov=lr)
+    callback = partial(callback_fn, applyfn=agent.vobs_fn)
+    bel, yhat_pp = agent.scan(init_bel, measurements, covariates, callback_fn=callback)
+    
+    # out = (agent, bel)
+    return yhat_pp.squeeze()
+
+
+@jax.jit
+def opt_step(log_lr, soft_threshold):
+    yhat_pp = filter_wlfimq(log_lr, soft_threshold, y, X)
+    err = jnp.power(yhat_pp - y, 2)
+    err = jnp.median(err)
+    err = jax.lax.cond(jnp.isnan(err), lambda: 1e6, lambda: err)
+    return -err
+
+
+# In[23]:
+
+
+bo = BayesianOptimization(
+    opt_step,
+    pbounds={
+        "log_lr": (-5, 0),
+        "soft_threshold": (1e-6, 20)
+    },
+    random_state=314,
+    allow_duplicate_points=True
+)
+
+bo.maximize(init_points=init_points, n_iter=n_iter)
+
+
+# In[24]:
+
+
+method = "WLF-IMQ"
+log_lr = bo.max["params"]["log_lr"]
+configs[method] = bo.max["params"]
+
+hist_bel = []
+times = []
+
+for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs): 
+    tinit = time()
+    run = filter_wlfimq(**bo.max["params"], measurements=y, covariates=X)
+    run = jax.block_until_ready(run)
+    tend = time()
+    
+    hist_bel.append(run)
+    times.append(tend - tinit)
+
+hist_bel = np.stack(hist_bel)
+
+hist_methods[method] = hist_bel
+time_methods[method] = times
+
+
+# ## WLF-MD
+print("-" * 20, "WLF-MD", "-" * 20)
+
+# In[162]:
+
+
+@jax.jit
+def filter_wlfmd(log_lr, threshold, measurements, covariates):
+    lr = jnp.exp(log_lr)
+    nsteps = len(measurements)
+    agent = rkf.ExtendedKalmanFilterMD(
+        latent_fn, measurement_fn,
+        dynamics_covariance=Q,
+        observation_covariance=observation_covariance,
+        threshold=threshold,
+    )
+    
+    init_bel = agent.init_bel(params_init, cov=lr)
+    callback = partial(callback_fn, applyfn=agent.vobs_fn)
+    bel, yhat_pp = agent.scan(init_bel, measurements, covariates, callback_fn=callback)
+    
+    # out = (agent, bel)
+    return yhat_pp.squeeze()
+
+
+@jax.jit
+def opt_step(log_lr, threshold):
+    yhat_pp = filter_wlfmd(log_lr, threshold, y, X)
+    err = jnp.power(yhat_pp - y, 2)
+    err = jnp.median(err)
+    err = jax.lax.cond(jnp.isnan(err), lambda: 1e6, lambda: err)
+    return -err
+
+
+# In[163]:
+
+
+bo = BayesianOptimization(
+    opt_step,
+    pbounds={
+        "log_lr": (-5, 0),
+        "threshold": (1e-6, 20)
+    },
+    random_state=314,
+    allow_duplicate_points=True
+)
+
+bo.maximize(init_points=init_points, n_iter=n_iter)
+
+
+# In[164]:
+
+
+method = "WLF-MD"
+configs[method] = bo.max["params"]
+
+hist_bel = []
+times = []
+
+for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs): 
+    tinit = time()
+    run = filter_wlfmd(**bo.max["params"], measurements=y, covariates=X)
+    run = jax.block_until_ready(run)
+    tend = time()
+    
+    hist_bel.append(run)
+    times.append(tend - tinit)
+
+hist_bel = np.stack(hist_bel)
+
+hist_methods[method] = hist_bel
+time_methods[method] = times
+
+
+# ## OGD
+print("-" * 20, "OGD", "-" * 20)
+
+# In[144]:
 
 
 def lossfn(params, counter, x, y, applyfn):
     yhat = applyfn(params, x)
     return jnp.sum(counter * (y - yhat) ** 2) / counter.sum()
 
-def filter_ogd(log_lr, n_inner):
-    lr = np.exp(log_lr)
-    n_inner = int(n_inner)
+
+# In[145]:
+
+
+@jax.jit
+def filter_ogd(log_lr, n_inner, measurements, covariates):
+    lr = jnp.exp(log_lr)
+    n_inner = n_inner.astype(int)
     
     agent = replay_sgd.FifoSGD(
-        model.apply,
+        measurement_fn,
         lossfn,
         optax.adam(lr),
         buffer_size=1,
-        dim_features=X.shape[-1],
+        dim_features=covariates.shape[-1],
         dim_output=1,
         n_inner=n_inner,
     )
-
-    callback = partial(callback_fn, applyfn=model.apply)
-
-    bel_init = agent.init_bel(params_init)
-    bel_final, yhat_pp = agent.scan(bel_init, y, X, callback)
-    out = (agent, bel_final)
-    yhat_pp = yhat_pp.squeeze()
-
-    return yhat_pp.squeeze(), out
-
-def opt_step(log_lr, n_inner):
-    res = -jnp.power(filter_ogd(log_lr, n_inner)[0] - y, 2)
-    res = jnp.median(res)
-    if np.isnan(res) or np.isinf(res):
-        res = -1e+6
     
-    return res
+    callback = partial(callback_fn, applyfn=measurement_fn)
+    
+    init_bel = agent.init_bel(params_init)
+    bel, yhat_pp = agent.scan(init_bel, measurements, covariates, callback_fn=callback)
+    
+    # out = (agent, bel)
+    return yhat_pp.squeeze()
 
 
-# In[ ]:
+@jax.jit
+def opt_step(log_lr, n_inner):
+    yhat_pp = filter_ogd(log_lr, n_inner, y, X)
+    err = jnp.power(yhat_pp - y, 2)
+    err = jnp.median(err)
+    err = jax.lax.cond(jnp.isnan(err), lambda: 1e6, lambda: err)
+    return -err
 
 
-get_ipython().run_cell_magic('time', '', 'bo = BayesianOptimization(\n    opt_step,\n    pbounds={\n        "log_lr": (-5, 0),\n        "n_inner": (1, 10),\n    },\n    verbose=1,\n    random_state=314,\n    allow_duplicate_points=True\n)\n\nbo.maximize(init_points=5, n_iter=5)\n')
+# In[146]:
 
 
-# In[ ]:
-
-
-lr = jnp.exp(bo.max["params"]["log_lr"])
-n_inner = int(bo.max["params"]["n_inner"])
-
-agent = replay_sgd.FifoSGD(
-    model.apply,
-    lossfn,
-    optax.adam(lr),
-    buffer_size=1,
-    dim_features=X.shape[-1],
-    dim_output=1,
-    n_inner=n_inner
+bo = BayesianOptimization(
+    opt_step,
+    pbounds={
+        "log_lr": (-5, 0),
+        "n_inner": (1, 10),
+    },
+    random_state=314,
+    allow_duplicate_points=True
 )
 
-callback = partial(callback_fn, applyfn=model.apply)
-
-bel_init = agent.init_bel(params_init)
-state_final, yhat = agent.scan(bel_init, y, X, callback)
-yhat = yhat.squeeze()
-
-errs = (y - yhat)
-jnp.sqrt(jnp.power(errs, 2).mean())
+bo.maximize(init_points=init_points, n_iter=n_iter)
 
 
-# In[ ]:
+# In[147]:
 
 
-get_ipython().run_cell_magic('time', '', '_, yhat_collection_ogd = jax.vmap(agent.scan, in_axes=(None, 0, 0, None))(bel_init, y_collection, X_collection, callback)\nyhat_collection_ogd = jax.block_until_ready(yhat_collection_ogd)\nyhat_collection_ogd = yhat_collection_ogd.squeeze()\n')
+method = "OGD"
+configs[method] = bo.max["params"]
 
+hist_bel = []
+times = []
 
-time_runs = []
-for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs, desc="OGD"):
-    time_init = time()
-    _, y_est = agent.scan(bel_init, yc, Xc, callback)
-    y_est = y_est.block_until_ready()
-    time_end = time()
-    time_runs.append(time_end - time_init)
+for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs): 
+    tinit = time()
+    run = filter_ogd(**bo.max["params"], measurements=y, covariates=X)
+    run = jax.block_until_ready(run)
+    tend = time()
     
+    hist_bel.append(run)
+    times.append(tend - tinit)
 
-time_runs_ogd = pd.Series(time_runs, name="OGD")
-err_collection_ogd  = pd.DataFrame(np.power(y_collection - yhat_collection_ogd, 2).T)
+hist_bel = np.stack(hist_bel)
 
-
-# # Results
-
-# In[ ]:
-
-# *************************************************************************************************************************************************
-# *************************************************************************************************************************************************
-# *************************************************************************************************************************************************
+hist_methods[method] = hist_bel
+time_methods[method] = times
 
 
+# # Summary
 
-pd.set_option("display.float_format", lambda x: format(x, "0.4f"))
-
-
-
-df_results = pd.DataFrame({
-    "WLF-IMQ": err_collection_wlf.median(axis=0),
-    "EKF": err_collection_ekf.median(axis=0),
-    "OGD": err_collection_ogd.median(axis=0),
-    "WLF-MD": err_collection_mekf.median(axis=0),
-    "EKF-IW": err_collection_ann1.median(axis=0),
-    "EKF-B": err_collection_oekf.median(axis=0),
-})
-
-print(df_results.describe())
+# In[167]:
 
 
+rmedse_df = pd.DataFrame(jax.tree_map(
+    lambda x: np.sqrt(np.median(np.power(x - y_collection, 2), 1)),
+    hist_methods
+))
+rmedse_df = rmedse_df.reset_index().melt("index")
+rmedse_df = rmedse_df.rename({
+    "index": "run",
+    "variable": "method",
+    "value": "err"
+}, axis=1)
+rmedse_df.head()
 
-err_collection = {
-    "methods": {
-        "EKF": err_collection_ekf,
-        "EKF-B": err_collection_oekf,
-        "EKF-IW": err_collection_ann1,
-        "OGD": err_collection_ogd,
-        "WLF-IMQ": err_collection_wlf,
-        "WLF-MD": err_collection_mekf,
+
+# In[169]:
+
+
+time_df = pd.DataFrame(time_methods).reset_index().melt("index")
+time_df = time_df.rename({
+    "index": "run",
+    "variable": "method",
+    "value": "time"
+}, axis=1)
+
+time_df.head()
+
+
+# In[170]:
+
+
+df = rmedse_df.merge(time_df, on=["method", "run"]).query("run > 0")
+
+
+# ## Store data
+
+# In[193]:
+
+
+print(df.groupby("method").median().drop("run", axis=1))
+
+
+# In[194]:
+
+
+data = {
+    "datasets": {
+        "X": np.array(X_collection),
+        "y": np.array(y_collection),
     },
-    "running-times": {
-        "EKF": time_runs_ekf,
-        "EKF-B": time_runs_oekf,
-        "EKF-IW": time_runs_ann1,
-        "OGD": time_runs_ogd,
-        "WLF-IMQ": time_runs_wlf,
-        "WLF-MD": time_runs_mekf,
-    },
-    "config": {
-        "mask-clean": mask_clean,
-        "p_error": p_error,
-    },
+    "time": {k: np.array(v) for k, v in time_methods.items()},
+    "posterior-states": hist_methods,
+    "config": configs,
+    "dataset-name": dataset_name,
+    "p-error": p_error,
 }
 
 
-
-with open(f"./results/{dataset_name}-{noise_type}-p-error{p_error * 100:02.0f}.pkl", "wb") as f:
-    pickle.dump(err_collection, f)
+# In[195]:
 
 
-p_error
+p_error_str = format(p_error * 100, "0.0f")
+filename = f"{dataset_name}-{noise_type}-p-error{p_error_str}.pkl"
+print(f"Storing in {filename}")
+with open(filename, "wb") as f:
+    pickle.dump(data, f)
