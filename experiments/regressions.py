@@ -3,6 +3,7 @@
 
 # # UCI regression with outliers
 
+import os
 import sys
 import jax
 import optax
@@ -661,6 +662,7 @@ data = {
 
 p_error_str = format(p_error * 100, "0.0f")
 filename = f"{dataset_name}-{noise_type}-p-error{p_error_str}.pkl"
-print(f"Storing in {filename}")
-with open(filename, "wb") as f:
+path = os.path.join("results", filename)
+print(f"Storing in {path}")
+with open(path, "wb") as f:
     pickle.dump(data, f)
