@@ -239,7 +239,7 @@ def load_and_run(key, y, X, model, filterfn):
     return errs
 
 
-for p_error in tqdm(p_errors[:2]):
+for p_error in tqdm(p_errors):
     p100 = int(100 * p_error)
     X_collection, y_collection, ix_clean_collection = create_collection_datsets(p_error, n_runs, v_error=50, seed_init=314)
 
@@ -250,8 +250,9 @@ for p_error in tqdm(p_errors[:2]):
         hparams = hyperparams[method]
 
         errs_collection = []
-        for X, y in zip(X_collection, y_collection):
+        for X, y in tqdm(zip(X_collection, y_collection), total=n_runs, leave=False):
             errs = load_and_run(key, y, X, model, filterfn)
+            errs = jax.block_until_ready(errs)
             errs_collection.append(errs)
         errs_collection = np.array(errs_collection)
         p_errors_collection[p100][method] = errs_collection
