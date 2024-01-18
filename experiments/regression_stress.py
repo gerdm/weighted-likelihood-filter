@@ -14,6 +14,7 @@ import jax.numpy as jnp
 import flax.linen as nn
 
 from tqdm import tqdm
+from time import time
 from functools import partial
 from rebayes_mini.methods import replay_sgd
 from rebayes_mini.methods import robust_filter as rkf
@@ -226,8 +227,7 @@ def latent_fn(x): return x
 measurement_fn = model.apply
 
 p_errors_collection = {}
-
-p_error = 0.1
+time_collection_all = {}
 
 p_errors = np.arange(0, 0.5, 0.05)
 
@@ -244,24 +244,29 @@ for p_error in tqdm(p_errors):
     X_collection, y_collection, ix_clean_collection = create_collection_datsets(p_error, n_runs, v_error=50, seed_init=314)
 
     p_errors_collection[p100] = {}
+    time_collection_all[p100] = {}
     for method in (pbar := tqdm(hyperparams, leave=False)):
         pbar.set_description(f"Method: {method}")
         filterfn = fileter_fns[method]
         hparams = hyperparams[method]
 
         errs_collection = []
+        time_collection = []
         for X, y in tqdm(zip(X_collection, y_collection), total=n_runs, leave=False):
+            time_init = time()
             errs = load_and_run(key, y, X, model, filterfn)
             errs = jax.block_until_ready(errs)
+            time_end = time()
             errs_collection.append(errs)
         errs_collection = np.array(errs_collection)
+        time_collection = np.array(time_collection)
+
         p_errors_collection[p100][method] = errs_collection
-
-print(jax.tree_map(np.shape, p_errors_collection))
-
+        time_collection_all[p100][method] = time_collection
 
 res = {
     "p_errors_collection": p_errors_collection,
+    "time_collection": time_collection_all,
     "config": config,
 }
 
