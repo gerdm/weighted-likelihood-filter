@@ -134,7 +134,7 @@ configs = {}
 observation_covariance = jnp.eye(1) * 1.0
 
 
-# ## Kalman Filter
+# *********************************** KF  ******************************************
 print("-" * 20, "KF", "-" * 20)
 
 # In[13]:
@@ -208,7 +208,7 @@ hist_methods[method] = hist_bel
 time_methods[method] = times
 
 
-# ## KF-B
+# *********************************** KF-B  ******************************************
 print("-" * 20, "KF-B", "-" * 20)
 
 # In[16]:
@@ -287,10 +287,8 @@ hist_methods[method] = hist_bel
 time_methods[method] = times
 
 
-# ## KF-IW
+# *********************************** KF-IW  ******************************************
 print("-" * 20, "KF-IW", "-" * 20)
-
-# In[19]:
 
 
 @jax.jit
@@ -361,10 +359,8 @@ hist_methods[method] = hist_bel
 time_methods[method] = times
 
 
-# ## WLF-IMQ
+# *********************************** WLF-IMQ  ******************************************
 print("-" * 20, "WLF-IMQ", "-" * 20)
-
-# In[22]:
 
 
 @jax.jit
@@ -436,7 +432,7 @@ hist_methods[method] = hist_bel
 time_methods[method] = times
 
 
-# ## WLF-MD
+# *********************************** WLF-MD  ******************************************
 print("-" * 20, "WLF-MD", "-" * 20)
 
 # In[162]:
@@ -510,18 +506,13 @@ hist_methods[method] = hist_bel
 time_methods[method] = times
 
 
-# ## OGD
+# *********************************** OGD  ******************************************
 print("-" * 20, "OGD", "-" * 20)
-
-# In[144]:
 
 
 def lossfn(params, counter, x, y, applyfn):
     yhat = applyfn(params, x)
     return jnp.sum(counter * (y - yhat) ** 2) / counter.sum()
-
-
-# In[145]:
 
 
 @jax.jit
@@ -542,9 +533,8 @@ def filter_ogd(log_lr, n_inner, measurements, covariates):
     callback = partial(callback_fn, applyfn=measurement_fn)
     
     init_bel = agent.init_bel(params_init)
-    bel, yhat_pp = agent.scan(init_bel, measurements, covariates, callback_fn=callback)
+    _, yhat_pp = agent.scan(init_bel, measurements, covariates, callback_fn=callback)
     
-    # out = (agent, bel)
     return yhat_pp.squeeze()
 
 
@@ -596,10 +586,78 @@ hist_bel = np.stack(hist_bel)
 hist_methods[method] = hist_bel
 time_methods[method] = times
 
+# *********************************** WLF-OGD  ******************************************
+print("-" * 20, "WLF-OGD", "-" * 20)
+@jax.jit
+def filter_wlf_ogd(log_lr, soft_threshold, n_inner, measurements, covariates):
+    lr = jnp.exp(log_lr)
+    n_inner = n_inner.astype(int)
+    
+    agent = rkf.FifoSGDIMQ(
+        measurement_fn,
+        optax.adam(lr),
+        buffer_size=1,
+        dim_features=covariates.shape[-1],
+        dim_output=1,
+        soft_threshold=soft_threshold,
+        n_inner=n_inner,
+    )
+    
+    callback = partial(callback_fn, applyfn=measurement_fn)
+    
+    init_bel = agent.init_bel(params_init)
+    _, yhat_pp = agent.scan(init_bel, measurements, covariates, callback_fn=callback)
+    
+    return yhat_pp.squeeze()
 
-# # Summary
 
-# In[167]:
+@jax.jit
+def opt_step(log_lr, soft_threshold, n_inner):
+    yhat_pp = filter_wlf_ogd(log_lr, soft_threshold, n_inner, y, X)
+    err = jnp.power(yhat_pp - y, 2)
+    err = jnp.median(err)
+    err = jax.lax.cond(jnp.isnan(err), lambda: 1e6, lambda: err)
+    return -err
+
+
+bo = BayesianOptimization(
+    opt_step,
+    pbounds={
+        "log_lr": (-10, 0),
+        "soft_threshold": (1e-6, 20),
+        "n_inner": (1, 10),
+    },
+    random_state=314,
+    allow_duplicate_points=True
+)
+
+bo.maximize(init_points=init_points, n_iter=n_iter)
+
+
+method = "WLF-OGD"
+configs[method] = bo.max["params"]
+
+hist_bel = []
+times = []
+
+for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs): 
+    tinit = time()
+    run = filter_wlf_ogd(**bo.max["params"], measurements=y, covariates=X)
+    run = jax.block_until_ready(run)
+    tend = time()
+    
+    hist_bel.append(run)
+    times.append(tend - tinit)
+
+hist_bel = np.stack(hist_bel)
+
+hist_methods[method] = hist_bel
+time_methods[method] = times
+
+
+# ***************************************************************************************
+# *********************************** SUMMARY  ******************************************
+# ***************************************************************************************
 
 
 rmedse_df = pd.DataFrame(jax.tree_map(
