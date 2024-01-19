@@ -257,7 +257,10 @@ for p_error in tqdm(p_errors):
             errs = load_and_run(key, y, X, model, filterfn)
             errs = jax.block_until_ready(errs)
             time_end = time()
+            
+            time_collection.append(time_end - time_init)
             errs_collection.append(errs)
+
         errs_collection = np.array(errs_collection)
         time_collection = np.array(time_collection)
 
