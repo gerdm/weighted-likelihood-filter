@@ -238,6 +238,7 @@ class GaussMeanOutlierMovingObject2D(MovingObject2D):
         output = {
             "observed": x_next,
             "latent": z_next,
+            "is_outlier": corrupted,
         }
 
         return z_next, output
@@ -281,6 +282,7 @@ class GaussOneSideOutlierMovingObject2D(MovingObject2D):
         output = {
             "observed": x_next,
             "latent": z_next,
+            "is_outlier": corrupted,
         }
 
         return z_next, output
