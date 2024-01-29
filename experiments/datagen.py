@@ -317,14 +317,17 @@ class UCIDatasets:
         if dataset not in self.datasets:
             raise ValueError(f"Dataset {dataset} not found")
 
+        file_name = f"{dataset}.csv"
         downloaded_datasets = os.listdir(self.root_dir)
         if any([dataset in d for d in downloaded_datasets]):
-            path = os.path.join(self.root_dir, dataset)
+            # Dataset already downloaded
+            path = os.path.join(self.root_dir, file_name)
             df = pd.read_csv(path, sep=r"\s+", header=None)
         else:
+            # Download dataset
             path = self.base_url.format(dataset=dataset)
             df = pd.read_csv(path, sep=r"\s+", header=None)
-            df.to_csv(os.path.join(self.root_dir, dataset), index=False, sep="\t")
+            df.to_csv(os.path.join(self.root_dir, file_name), index=False, header=None, sep="\t")
 
         return df
 
