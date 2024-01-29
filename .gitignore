@@ -3,6 +3,9 @@
 *.png
 *.gif
 
+# tabular files
+*.csv
+
 # pickled files
 *.pkl
 
