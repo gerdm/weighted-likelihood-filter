@@ -1,0 +1,29 @@
+[metadata]
+p-error = 0.1
+dataset-name = "protein-tertiary-structure"
+
+[hyperparams.KF]
+log_lr = -3.67476124413769
+
+[hyperparams.KF-B]
+alpha = 4.147385402505873
+beta = 0.5745904504262146
+log_lr = 0.0
+n_inner = 7.357594208515764
+
+[hyperparams.KF-IW]
+log_lr = -3.6962172222522445
+n_inner = 7.897384208694525
+noise_scaling = 5.230623461029695
+
+[hyperparams.WLF-IMQ]
+log_lr = -0.08503055012787364
+soft_threshold = 0.0310386108271806
+
+[hyperparams.WLF-MD]
+log_lr = -0.03541815606668486
+threshold = 0.17359738711176667
+
+[hyperparams.OGD]
+log_lr = -5.0
+n_inner = 1.0
