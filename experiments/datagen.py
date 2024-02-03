@@ -3,57 +3,6 @@ import jax
 import numpy as np
 import pandas as pd
 import jax.numpy as jnp
-from functools import partial
-
-class MultiSensorBearingsOnly:
-    """
-    Example taken from:
-    Recursive outlier-robust filtering and smoothing for nonlinear systems using the multivariate student-t distribution
-    by Piche, Sarkka, and Hartikainen
-    """
-    def __init__(self, turning_rate, dt, q1, q2, proba_clutter):
-        self.turning_rate = turning_rate
-        self.dt = dt
-        self.q1 = q1
-        self.q2 = q2
-        self.proba_clutter = proba_clutter
-        self.transition_matrix = self._build_transition_matrix()
-        self.process_covariance = self._build_process_noise_covariance()
-
-    def _build_transition_matrix(self):
-        sint = jnp.sin(self.turning_rate * self.dt)
-        cost = jnp.cos(self.turning_rate * self.dt)
-        A = jnp.array([
-            [1, sint / self.turning_rate, 0, (cost - 1) / self.turning_rate, 0],
-            [0, cost, 0, -sint, 0],
-            [0, (1 - cost) / self.turning_rate, 1, sint / self.turning_rate, 0],
-            [0, sint, 0, cost, 0],
-            [0, 0, 0, 0, 1]
-        ])
-        return A
-
-    def _build_process_noise_covariance(self):
-        M = jnp.array([
-            [self.dt ** 3 / 3, self.dt ** 2 / 2],
-            [self.dt ** 2 / 2, self.dt]
-        ])
-
-        Q = jax.scipy.linalg.block_diag(
-            self.q1 * M, self.q2 * self.dt * M, self.q2
-        )
-
-        return Q
-
-    @partial(jax.jit, static_argnums=(0,))
-    def _step_process(self, key, latent):
-        latent_next = jax.random.multivariate_normal(
-            key=key, mean=self.transition_matrix @ latent, cov=self.process_covariance
-        )
-        return latent_next
-
-    @partial(jax.jit, static_argnums=(0,))
-    def _measurement_step(self, key, latent):
-        ...
 
 
 class MovingObject2D:
