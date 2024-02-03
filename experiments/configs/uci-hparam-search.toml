@@ -2,5 +2,15 @@
 random_state = 314
 dynamics_covariance = 0.0
 
-[KF]
+[KF.learn]
 log_lr = [-5, 0]
+[KF.static]
+dynamics_covariance = 0.0
+
+[KF-B.learn]
+log_lr = [-5, 0]
+alpha = [0.0, 5.0]
+beta = [0.0, 5.0]
+n_inner = [1, 10]
+[KF-B.static]
+dynamics_covariance = 0.0

@@ -234,7 +234,7 @@ X, y = X_collection[0], y_collection[0]
 random_state = config_search["shared"]["random_state"]
 params_init = model.init(key, X[:1])
 
-method = "KF"
+method = "KF-B"
 filterfn = fileter_fns[method]
 hparams = config_search[method]["learn"]
 hparams_static = config_search[method]["static"]
