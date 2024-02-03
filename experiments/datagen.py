@@ -351,3 +351,39 @@ class UCIDatasets:
         }
 
         return res
+
+
+def create_uci_collection(
+        dataset_name, noise_type, p_error, n_runs, v_error=50, seed_init=314, path=None
+):
+    """
+    Create a collection of datasets with different noise realizations
+    """
+    path = path or "./data"
+    uci = UCIDatasets(path)
+    X_collection= []
+    y_collection = []
+    ix_clean_collection = []
+
+    for i in range(n_runs):
+        if noise_type == "target":
+            data = uci.sample_one_sided_noisy_dataset(dataset_name, p_error=p_error, seed=seed_init + i, v_error=v_error)
+            ix_clean = ~data["err_where"].astype(bool)
+        elif noise_type == "covariate":
+            data = uci.sample_noisy_covariates(dataset_name, p_error=p_error, seed=seed_init + i, v_error=v_error)
+            ix_clean = ~data["err_where"].any(axis=1).astype(bool)
+        else:
+            raise KeyError(f"Noise {noise_type} not available")
+
+        X = data["X"]
+        y = data["y"]
+
+        X_collection.append(X)
+        y_collection.append(y)
+        ix_clean_collection.append(ix_clean)
+
+    X_collection = jnp.array(X_collection)
+    y_collection = jnp.array(y_collection)
+    ix_clean_collection = np.array(ix_clean_collection).T
+
+    return X_collection, y_collection, ix_clean_collection
