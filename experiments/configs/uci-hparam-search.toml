@@ -1,0 +1,6 @@
+[shared]
+random_state = 314
+dynamics_covariance = 0.0
+
+[KF]
+log_lr = [-5, 0]
