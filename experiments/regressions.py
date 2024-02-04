@@ -134,6 +134,17 @@ configs = {}
 observation_covariance = jnp.eye(1) * 1.0
 
 
+def build_bopt_step(filterfn, y, X):
+    @partial(jax.jit, static_argnames=("hparams",))
+    def opt_step(**hparams):
+        yhat_pp = filterfn(**hparams, measurements=y, covariates=X)
+        err = jnp.power(yhat_pp - y, 2)
+        err = jnp.median(err)
+        err = jax.lax.cond(jnp.isnan(err), lambda: 1e6, lambda: err)
+        return -err
+    
+    return opt_step
+
 # *********************************** KF  ******************************************
 print("-" * 20, "KF", "-" * 20)
 
@@ -159,17 +170,7 @@ def filter_kf(log_lr, measurements, covariates):
     return yhat_pp.squeeze()
 
 
-@jax.jit
-def opt_step(log_lr):
-    yhat_pp = filter_kf(log_lr, y, X)
-    err = jnp.power(yhat_pp - y, 2)
-    err = jnp.median(err)
-    err = jax.lax.cond(jnp.isnan(err), lambda: 1e6, lambda: err)
-    return -err
-
-
-# In[14]:
-
+opt_step = build_bopt_step(filter_kf, y, X)
 
 bo = BayesianOptimization(
     opt_step,
@@ -181,10 +182,6 @@ bo = BayesianOptimization(
 )
 
 bo.maximize(init_points=init_points, n_iter=n_iter)
-
-
-# In[15]:
-
 
 method = "KF"
 log_lr = bo.max["params"]["log_lr"]
@@ -211,8 +208,6 @@ time_methods[method] = times
 # *********************************** KF-B  ******************************************
 print("-" * 20, "KF-B", "-" * 20)
 
-# In[16]:
-
 
 @jax.jit
 def filter_kfb(log_lr, alpha, beta, n_inner, measurements, covariates):
@@ -231,21 +226,12 @@ def filter_kfb(log_lr, alpha, beta, n_inner, measurements, covariates):
     
     init_bel = agent.init_bel(params_init, cov=lr)
     callback = partial(callback_fn, applyfn=agent.vobs_fn)
-    bel, yhat_pp = agent.scan(init_bel, measurements, covariates, callback_fn=callback)
+    _, yhat_pp = agent.scan(init_bel, measurements, covariates, callback_fn=callback)
     
     return yhat_pp.squeeze()
 
 
-@jax.jit
-def opt_step(log_lr, alpha, beta, n_inner):
-    yhat_pp = filter_kfb(log_lr, alpha, beta, n_inner, y, X)
-    err = jnp.power(yhat_pp - y, 2)
-    err = jnp.median(err)
-    err = jax.lax.cond(jnp.isnan(err), lambda: 1e6, lambda: err)
-    return -err
-
-
-# In[17]:
+opt_step = build_bopt_step(filter_kfb, y, X)
 
 
 bo = BayesianOptimization(
@@ -263,8 +249,7 @@ bo = BayesianOptimization(
 bo.maximize(init_points=init_points, n_iter=n_iter)
 
 
-# In[18]:
-
+import pdb; pdb.set_trace()
 
 method = "KF-B"
 configs[method] = bo.max["params"]
@@ -390,8 +375,6 @@ def opt_step(log_lr, soft_threshold):
     err = jax.lax.cond(jnp.isnan(err), lambda: 1e6, lambda: err)
     return -err
 
-
-# In[23]:
 
 
 bo = BayesianOptimization(
