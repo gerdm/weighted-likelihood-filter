@@ -9,7 +9,7 @@ import flax.linen as nn
 
 # local imports 
 import datagen
-import experiments.experiments_main as experiments
+import experiments_main as experiments
 
 uci = datagen.UCIDatasets("./data")
 
@@ -79,6 +79,7 @@ for dataset_name in uci.datasets:
         hist_methods[method] = hist_metrics
         time_methods[method] = hist_times
         configs[method] = {**hparams,  **hparams_static}
+        configs[method] = jax.tree_map(np.array, configs[method])
 
 
     rmedse_df = pd.DataFrame(jax.tree_map(
