@@ -3,27 +3,27 @@ p-error = 0.1
 dataset-name = "kin8nm"
 
 [hyperparams.KF]
-log_lr = -3.8615376166119715
+log_lr = -2.8688309447373888
 
 [hyperparams.KF-B]
-alpha = 4.383948293246978
-beta = 0.34677108603973195
-log_lr = 0.0
-n_inner = 9.396475389109668
+alpha = 4.972569631733866
+beta = 0.1895877124156592
+log_lr = -0.06881893981301523
+n_inner = 6.528322701674925
 
 [hyperparams.KF-IW]
-log_lr = -0.4156320925351622
-n_inner = 6.296877222777299
-noise_scaling = 5.300955758401489
+log_lr = -0.7693779270548485
+n_inner = 10.0
+noise_scaling = 2.770086589180527
 
 [hyperparams.WLF-IMQ]
-log_lr = -0.44118300304219904
-soft_threshold = 5.215131850234467
+log_lr = -0.023740308212579997
+soft_threshold = 5.1284754180296
 
 [hyperparams.WLF-MD]
 log_lr = 0.0
-threshold = 20.0
+threshold = 8.057993932403077
 
 [hyperparams.OGD]
-log_lr = -4.044381312033318
-n_inner = 1.5741869551035146
+log_lr = -4.437147427967857
+n_inner = 1.5306405048776868

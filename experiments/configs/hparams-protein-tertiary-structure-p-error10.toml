@@ -3,26 +3,26 @@ p-error = 0.1
 dataset-name = "protein-tertiary-structure"
 
 [hyperparams.KF]
-log_lr = -3.67476124413769
+log_lr = -3.710097935073275
 
 [hyperparams.KF-B]
-alpha = 4.147385402505873
-beta = 0.5745904504262146
+alpha = 4.937305911772789
+beta = 1.320591592673601
 log_lr = 0.0
-n_inner = 7.357594208515764
+n_inner = 5.888484978997316
 
 [hyperparams.KF-IW]
-log_lr = -3.6962172222522445
-n_inner = 7.897384208694525
-noise_scaling = 5.230623461029695
+log_lr = -3.8324773441073976
+n_inner = 1.0
+noise_scaling = 4.045059745617937
 
 [hyperparams.WLF-IMQ]
-log_lr = -0.08503055012787364
-soft_threshold = 0.0310386108271806
+log_lr = -0.0009857739192096204
+soft_threshold = 5.254090095994484
 
 [hyperparams.WLF-MD]
-log_lr = -0.03541815606668486
-threshold = 0.17359738711176667
+log_lr = -0.005300807060494073
+threshold = 9.613598069505846
 
 [hyperparams.OGD]
 log_lr = -5.0
