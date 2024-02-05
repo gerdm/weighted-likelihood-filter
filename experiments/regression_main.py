@@ -44,9 +44,6 @@ def callback_fn(bel, bel_pred, y, x, applyfn):
     return yhat
 
 
-Q = 0.0
-observation_covariance = jnp.eye(1) * 1.0
-
 class MLP(nn.Module):
     @nn.compact
     def __call__(self, x):
@@ -58,15 +55,13 @@ class MLP(nn.Module):
 
 model = MLP()
 
-
 def latent_fn(x): return x
 measurement_fn = model.apply
 
 
-
 def filter_kf(
         log_lr, params_init,
-        dynamics_covariance, measurements, covariates,
+        dynamics_covariance, observation_covariance, measurements, covariates,
         measurement_fn, state_fn
 ):
     lr = jnp.exp(log_lr)
@@ -86,7 +81,7 @@ def filter_kf(
 
 
 def filter_kfb(
-        log_lr, alpha, beta, n_inner, dynamics_covariance,
+        log_lr, alpha, beta, n_inner, dynamics_covariance, observation_covariance,
         params_init, measurements, covariates,
         measurement_fn, state_fn
 ):
@@ -112,7 +107,7 @@ def filter_kfb(
 
 
 def filter_kfiw(
-        log_lr, noise_scaling, n_inner, dynamics_covariance,
+        log_lr, noise_scaling, n_inner, dynamics_covariance, observation_covariance,
         params_init, measurements, covariates,
         measurement_fn, state_fn
 ):
@@ -136,7 +131,7 @@ def filter_kfiw(
 
 
 def filter_wlfimq(
-        log_lr, soft_threshold, dynamics_covariance,
+        log_lr, soft_threshold, dynamics_covariance, observation_covariance,
         params_init, measurements, covariates,
         measurement_fn, state_fn
 ):
@@ -157,7 +152,7 @@ def filter_wlfimq(
 
 
 def filter_wlfmd(
-        log_lr, threshold, dynamics_covariance,
+        log_lr, threshold, dynamics_covariance, observation_covariance,
         params_init, measurements, covariates
 ):
     lr = jnp.exp(log_lr)
@@ -205,22 +200,40 @@ def build_bopt_step(
         random_state, y, X, measurement_fn, state_fn,
 ):
     @jax.jit
-    def opt_step(**hparams):
+    def filterfn_jit(measurements, covariates, **hparams):
         yhat_pp = filterfn(
             **hparams, **hparams_static,
-            params_init=params_init, measurements=y, covariates=X,
+            params_init=params_init, measurements=measurements, covariates=covariates,
             measurement_fn=measurement_fn, state_fn=state_fn
         )
-        err = jnp.power(yhat_pp - y, 2)
+        err = jnp.power(yhat_pp - measurements, 2)
         err = jnp.median(err)
         err = jax.lax.cond(jnp.isnan(err), lambda: 1e6, lambda: err)
         return -err
     
+    partial_filter = partial(filterfn_jit, measurements=y, covariates=X)
     bo = BayesianOptimization(
-        opt_step, hparams, random_state=random_state,
+        partial_filter, hparams, random_state=random_state,
     )
 
-    return bo
+    return bo, filterfn_jit
+
+
+def eval_filterfn_collection(filterfn, hparams, X_collection, y_collection):
+    hist_time = []
+    hist_metric = []
+    n_runs = len(X_collection)
+    for yc, Xc in tqdm(zip(y_collection, X_collection), total=n_runs):
+        tinit = time()
+        run = filterfn(**hparams, measurements=yc, covariates=Xc)
+        run = jax.block_until_ready(run)
+        tend = time()
+
+        hist_time.append(tend - tinit)
+        hist_metric.append(run)
+    
+    hist_metric = np.stack(hist_metric)
+    return hist_time, hist_metric
     
 
 fileter_fns = {
@@ -244,12 +257,19 @@ random_state = config_search["shared"]["random_state"]
 params_init = model.init(key, X[:1])
 
 method = "KF-B"
-filterfn = fileter_fns[method]
+filterfn_name = fileter_fns[method]
 hparams = config_search[method]["learn"]
 hparams_static = config_search[method]["static"]
 
-bo = build_bopt_step(
-        filterfn, hparams, hparams_static, params_init,
+# There must be a better way to do this
+hparams_static["observation_covariance"] = jnp.eye(1) * hparams_static["observation_covariance"]
+bo, filterfn = build_bopt_step(
+        filterfn_name, hparams, hparams_static, params_init,
         random_state, y, X, measurement_fn, latent_fn,
 )
 bo.maximize()
+
+hparams = bo.max["params"]
+hist_times, hist_metrics = eval_filterfn_collection(
+    filterfn, hparams, X_collection, y_collection
+)
