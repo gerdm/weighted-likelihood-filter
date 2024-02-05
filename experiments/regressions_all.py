@@ -9,7 +9,7 @@ import flax.linen as nn
 
 # local imports 
 import datagen
-import regression_main as regressions
+import experiments.experiments_main as experiments
 
 uci = datagen.UCIDatasets("./data")
 
@@ -55,24 +55,24 @@ for dataset_name in uci.datasets:
     random_state = config_search["shared"]["random_state"]
     params_init = model.init(key, X[:1])
 
-    for method in regressions.filter_fns:
+    for method in experiments.filter_fns:
         print(f"Method: {method}")
         config_method = config_search[method]
-        filterfn_name = regressions.filter_fns[method]
+        filterfn_name = experiments.filter_fns[method]
         hparams = config_method["learn"]
         hparams_static = config_method.get("static", {})
 
         # There must be a better way to do this
         if "observation_covariance" in hparams_static:
             hparams_static["observation_covariance"] = jnp.eye(1) * hparams_static["observation_covariance"]
-        bo, filterfn = regressions.build_bopt_step(
+        bo, filterfn = experiments.build_bopt_step(
                 filterfn_name, hparams, hparams_static, params_init,
                 random_state, y, X, measurement_fn, latent_fn,
         )
         bo.maximize()
 
         hparams = bo.max["params"]
-        hist_times, hist_metrics = regressions.eval_filterfn_collection(
+        hist_times, hist_metrics = experiments.eval_filterfn_collection(
             filterfn, hparams, X_collection, y_collection
         )
 
