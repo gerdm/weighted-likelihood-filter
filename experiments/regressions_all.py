@@ -78,7 +78,7 @@ for dataset_name in uci.datasets:
 
         hist_methods[method] = hist_metrics
         time_methods[method] = hist_times
-        configs[method] = hparams
+        configs[method] = {**hparams,  **hparams_static}
 
 
     rmedse_df = pd.DataFrame(jax.tree_map(
