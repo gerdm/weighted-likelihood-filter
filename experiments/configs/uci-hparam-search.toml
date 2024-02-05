@@ -42,5 +42,3 @@
 [OGD.learn]
     log_lr = [-5, 0]
     n_inner = [1, 10]
-[OGD.static]
-    dynamics_covariance = 0.0
