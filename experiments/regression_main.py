@@ -63,14 +63,15 @@ def latent_fn(x): return x
 measurement_fn = model.apply
 
 
-@jax.jit
+
 def filter_kf(
         log_lr, params_init,
-        dynamics_covariance, measurements, covariates
+        dynamics_covariance, measurements, covariates,
+        measurement_fn, state_fn
 ):
     lr = jnp.exp(log_lr)
     agent = rkf.ExtendedKalmanFilterIMQ(
-        latent_fn, measurement_fn,
+        state_fn, measurement_fn,
         dynamics_covariance=dynamics_covariance,
         observation_covariance=observation_covariance,
         soft_threshold=1e8,
@@ -83,16 +84,17 @@ def filter_kf(
     return yhat_pp.squeeze()
 
 
-@jax.jit
+
 def filter_kfb(
         log_lr, alpha, beta, n_inner, dynamics_covariance,
-        params_init, measurements, covariates
+        params_init, measurements, covariates,
+        measurement_fn, state_fn
 ):
     lr = jnp.exp(log_lr)
     n_inner = n_inner.astype(int)
     
     agent = rkf.ExtendedKalmanFilterBernoulli(
-        latent_fn, measurement_fn,
+        state_fn, measurement_fn,
         dynamics_covariance=dynamics_covariance,
         observation_covariance=observation_covariance,
         alpha=alpha,
@@ -108,16 +110,17 @@ def filter_kfb(
     return yhat_pp.squeeze()
 
 
-@jax.jit
+
 def filter_kfiw(
         log_lr, noise_scaling, n_inner, dynamics_covariance,
-        params_init, measurements, covariates
+        params_init, measurements, covariates,
+        measurement_fn, state_fn
 ):
     lr = jnp.exp(log_lr)
     n_inner = n_inner.astype(int)
     
     agent = rkf.ExtendedKalmanFilterInverseWishart(
-        latent_fn, measurement_fn,
+        state_fn, measurement_fn,
         dynamics_covariance=dynamics_covariance,
         prior_observation_covariance=observation_covariance,
         n_inner=n_inner,
@@ -131,14 +134,15 @@ def filter_kfiw(
     return yhat_pp.squeeze()
 
 
-@jax.jit
+
 def filter_wlfimq(
         log_lr, soft_threshold, dynamics_covariance,
-        params_init, measurements, covariates
+        params_init, measurements, covariates,
+        measurement_fn, state_fn
 ):
     lr = jnp.exp(log_lr)
     agent = rkf.ExtendedKalmanFilterIMQ(
-        latent_fn, measurement_fn,
+        state_fn, measurement_fn,
         dynamics_covariance=dynamics_covariance,
         observation_covariance=observation_covariance,
         soft_threshold=soft_threshold,
@@ -151,7 +155,7 @@ def filter_wlfimq(
     return yhat_pp.squeeze()
 
 
-@jax.jit
+
 def filter_wlfmd(
         log_lr, threshold, dynamics_covariance,
         params_init, measurements, covariates
@@ -170,10 +174,11 @@ def filter_wlfmd(
     
     return yhat_pp.squeeze()
 
-@jax.jit
+
 def filter_ogd(
         log_lr, n_inner, params_init, 
-        measurements, covariates
+        measurements, covariates,
+        measurement_fn, state_fn=None
 ):
     lr = jnp.exp(log_lr)
     n_inner = n_inner.astype(int)
@@ -195,12 +200,16 @@ def filter_ogd(
     return yhat_pp.squeeze()
 
 
-def build_bopt_step(filterfn, hparams, hparams_static, params_init, random_state, y, X):
+def build_bopt_step(
+        filterfn, hparams, hparams_static, params_init,
+        random_state, y, X, measurement_fn, state_fn,
+):
     @jax.jit
     def opt_step(**hparams):
-        # TODO: consider adding the measurement_fn and latent_fn as arguments
         yhat_pp = filterfn(
-            **hparams, **hparams_static, params_init=params_init, measurements=y, covariates=X
+            **hparams, **hparams_static,
+            params_init=params_init, measurements=y, covariates=X,
+            measurement_fn=measurement_fn, state_fn=state_fn
         )
         err = jnp.power(yhat_pp - y, 2)
         err = jnp.median(err)
@@ -239,5 +248,8 @@ filterfn = fileter_fns[method]
 hparams = config_search[method]["learn"]
 hparams_static = config_search[method]["static"]
 
-bo = build_bopt_step(filterfn, hparams, hparams_static, params_init, random_state, y, X)
+bo = build_bopt_step(
+        filterfn, hparams, hparams_static, params_init,
+        random_state, y, X, measurement_fn, latent_fn,
+)
 bo.maximize()
