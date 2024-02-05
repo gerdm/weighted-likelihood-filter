@@ -20,28 +20,14 @@ from rebayes_mini.methods import replay_sgd
 from rebayes_mini.methods import robust_filter as rkf
 
 
-# Load config
-dataset_name = sys.argv[1]
-n_runs = int(sys.argv[2])
-config_path_search = sys.argv[3]
-
-
-with open(config_path_search, "r") as f:
-    config_search = toml.load(f)
-
-print("*" * 80)
-print(f"Dataset: {dataset_name}")
-
-noise_type = "target" # or "covariate"
-
 def lossfn(params, counter, x, y, applyfn):
     yhat = applyfn(params, x)
     return jnp.sum(counter * (y - yhat) ** 2) / counter.sum()
 
+
 def callback_fn(bel, bel_pred, y, x, applyfn):
     yhat = applyfn(bel_pred.mean, x[None])
     return yhat
-
 
 
 def filter_kf(
@@ -62,7 +48,6 @@ def filter_kf(
     _, yhat_pp = agent.scan(init_bel, measurements, covariates, callback_fn=callback)
     
     return yhat_pp.squeeze()
-
 
 
 def filter_kfb(
@@ -90,7 +75,6 @@ def filter_kfb(
     return yhat_pp.squeeze()
 
 
-
 def filter_kfiw(
         log_lr, noise_scaling, n_inner, dynamics_covariance, observation_covariance,
         params_init, measurements, covariates,
@@ -114,7 +98,6 @@ def filter_kfiw(
     return yhat_pp.squeeze()
 
 
-
 def filter_wlfimq(
         log_lr, soft_threshold, dynamics_covariance, observation_covariance,
         params_init, measurements, covariates,
@@ -133,7 +116,6 @@ def filter_wlfimq(
     _, yhat_pp = agent.scan(init_bel, measurements, covariates, callback_fn=callback)
     
     return yhat_pp.squeeze()
-
 
 
 def filter_wlfmd(
@@ -232,6 +214,20 @@ fileter_fns = {
 
 
 if __name__ == "__main__":
+    # Load config
+    dataset_name = sys.argv[1]
+    n_runs = int(sys.argv[2])
+    config_path_search = sys.argv[3]
+
+
+    with open(config_path_search, "r") as f:
+        config_search = toml.load(f)
+
+    print("*" * 80)
+    print(f"Dataset: {dataset_name}")
+
+    noise_type = "target" # or "covariate"
+
     class MLP(nn.Module):
         @nn.compact
         def __call__(self, x):
