@@ -173,12 +173,16 @@ def build_bopt_step(
             params_init=params_init, measurements=measurements, covariates=covariates,
             measurement_fn=measurement_fn, state_fn=state_fn
         )
-        err = jnp.power(yhat_pp - measurements, 2)
+        return yhat_pp
+    
+    @jax.jit
+    def partial_filter(**hparams):
+        yhat_pp = filterfn_jit(y, X, **hparams)
+        err = jnp.power(yhat_pp - y, 2)
         err = jnp.median(err)
         err = jax.lax.cond(jnp.isnan(err), lambda: 1e6, lambda: err)
         return -err
     
-    partial_filter = partial(filterfn_jit, measurements=y, covariates=X)
     bo = BayesianOptimization(
         partial_filter, hparams, random_state=random_state,
     )
@@ -203,7 +207,7 @@ def eval_filterfn_collection(filterfn, hparams, X_collection, y_collection):
     return hist_time, hist_metric
     
 
-fileter_fns = {
+filter_fns = {
     "KF": filter_kf,
     "KF-B": filter_kfb,
     "KF-IW": filter_kfiw,
@@ -254,7 +258,7 @@ if __name__ == "__main__":
     params_init = model.init(key, X[:1])
 
     method = "KF-B"
-    filterfn_name = fileter_fns[method]
+    filterfn_name = filter_fns[method]
     hparams = config_search[method]["learn"]
     hparams_static = config_search[method]["static"]
 

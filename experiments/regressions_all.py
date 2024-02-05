@@ -57,7 +57,7 @@ for dataset_name in uci.datasets:
 
     for method in regressions.filter_fns:
         print(f"Method: {method}")
-        filterfn_name = regressions.fileter_fns[method]
+        filterfn_name = regressions.filter_fns[method]
         hparams = config_search[method]["learn"]
         hparams_static = config_search[method]["static"]
 
@@ -78,17 +78,18 @@ for dataset_name in uci.datasets:
         time_methods[method] = hist_times
         configs[method] = hparams
 
-        rmedse_df = pd.DataFrame(jax.tree_map(
-            lambda x: np.sqrt(np.median(np.power(x - y_collection, 2), 1)),
-            hist_methods
-        ))
-        rmedse_df = rmedse_df.reset_index().melt("index")
-        rmedse_df = rmedse_df.rename({
-            "index": "run",
-            "variable": "method",
-            "value": "err"
-        }, axis=1)
-        print(rmedse_df.groupby("method").median())
+
+    rmedse_df = pd.DataFrame(jax.tree_map(
+        lambda x: np.sqrt(np.median(np.power(x - y_collection, 2), 1)),
+        hist_methods
+    ))
+    rmedse_df = rmedse_df.reset_index().melt("index")
+    rmedse_df = rmedse_df.rename({
+        "index": "run",
+        "variable": "method",
+        "value": "err"
+    }, axis=1)
+    print(rmedse_df.groupby("method").median()["err"])
     
     data = {
         "datasets": {
