@@ -24,13 +24,13 @@
 
 [WLF-IMQ.learn]
     log_lr = [-5, 0]
-    soft_threshold = [1e-6, 20]
+    soft_threshold = [1e-6, 20.0]
 [WLF-IMQ.static]
     dynamics_covariance = 0.0
 
 [WLF-MD.learn]
     log_lr = [-5, 0]
-    threshold = [1e-6, 20]
+    threshold = [1e-6, 20.0]
 [WLF-MD.static]
     dynamics_covariance = 0.0
 
