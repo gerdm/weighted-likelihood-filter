@@ -120,11 +120,12 @@ def filter_wlfimq(
 
 def filter_wlfmd(
         log_lr, threshold, dynamics_covariance, observation_covariance,
-        params_init, measurements, covariates
+        params_init, measurements, covariates,
+        measurement_fn, state_fn
 ):
     lr = jnp.exp(log_lr)
     agent = rkf.ExtendedKalmanFilterMD(
-        latent_fn, measurement_fn,
+        state_fn, measurement_fn,
         dynamics_covariance=dynamics_covariance,
         observation_covariance=observation_covariance,
         threshold=threshold,
@@ -263,7 +264,8 @@ if __name__ == "__main__":
     hparams_static = config_search[method]["static"]
 
     # There must be a better way to do this
-    hparams_static["observation_covariance"] = jnp.eye(1) * hparams_static["observation_covariance"]
+    if "observation_covariance" in hparams_static:
+        hparams_static["observation_covariance"] = jnp.eye(1) * hparams_static["observation_covariance"]
     bo, filterfn = build_bopt_step(
             filterfn_name, hparams, hparams_static, params_init,
             random_state, y, X, measurement_fn, latent_fn,

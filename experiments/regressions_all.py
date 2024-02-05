@@ -57,12 +57,14 @@ for dataset_name in uci.datasets:
 
     for method in regressions.filter_fns:
         print(f"Method: {method}")
+        config_method = config_search[method]
         filterfn_name = regressions.filter_fns[method]
-        hparams = config_search[method]["learn"]
-        hparams_static = config_search[method]["static"]
+        hparams = config_method["learn"]
+        hparams_static = config_method.get("static", {})
 
         # There must be a better way to do this
-        hparams_static["observation_covariance"] = jnp.eye(1) * hparams_static["observation_covariance"]
+        if "observation_covariance" in hparams_static:
+            hparams_static["observation_covariance"] = jnp.eye(1) * hparams_static["observation_covariance"]
         bo, filterfn = regressions.build_bopt_step(
                 filterfn_name, hparams, hparams_static, params_init,
                 random_state, y, X, measurement_fn, latent_fn,
@@ -100,7 +102,7 @@ for dataset_name in uci.datasets:
         "pp_estimates": hist_methods,
         "configs": configs,
         "dataset-name": dataset_name,
-        "p-error": 0.1,
+        "p-error": p_error,
     }
 
 
