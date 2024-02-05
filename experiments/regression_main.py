@@ -3,14 +3,10 @@
 
 # # UCI regression with outliers
 
-import sys
 import jax
-import toml
 import optax
-import datagen
 import numpy as np
 import jax.numpy as jnp
-import flax.linen as nn
 
 from tqdm import tqdm
 from time import time
@@ -216,63 +212,3 @@ filter_fns = {
     "WLF-MD": filter_wlfmd,
     "OGD": filter_ogd,
 }
-
-
-if __name__ == "__main__":
-    # Load config
-    dataset_name = sys.argv[1]
-    n_runs = int(sys.argv[2])
-    config_path_search = sys.argv[3]
-
-
-    with open(config_path_search, "r") as f:
-        config_search = toml.load(f)
-
-    print("*" * 80)
-    print(f"Dataset: {dataset_name}")
-
-    noise_type = "target" # or "covariate"
-
-    class MLP(nn.Module):
-        @nn.compact
-        def __call__(self, x):
-            x = nn.Dense(20)(x)
-            x = nn.relu(x)
-            x = nn.Dense(1)(x)
-            return x
-
-
-    model = MLP()
-
-    def latent_fn(x): return x
-    measurement_fn = model.apply
-
-
-    X_collection, y_collection, ixs_collection = datagen.create_uci_collection(
-        dataset_name, noise_type=noise_type, p_error=0.1, n_runs=n_runs,
-        v_error=50, seed_init=314, path="./data"
-    )
-
-    key = jax.random.PRNGKey(314)
-    X, y = X_collection[0], y_collection[0]
-    random_state = config_search["shared"]["random_state"]
-    params_init = model.init(key, X[:1])
-
-    method = "KF-B"
-    filterfn_name = filter_fns[method]
-    hparams = config_search[method]["learn"]
-    hparams_static = config_search[method]["static"]
-
-    # There must be a better way to do this
-    if "observation_covariance" in hparams_static:
-        hparams_static["observation_covariance"] = jnp.eye(1) * hparams_static["observation_covariance"]
-    bo, filterfn = build_bopt_step(
-            filterfn_name, hparams, hparams_static, params_init,
-            random_state, y, X, measurement_fn, latent_fn,
-    )
-    bo.maximize()
-
-    hparams = bo.max["params"]
-    hist_times, hist_metrics = eval_filterfn_collection(
-        filterfn, hparams, X_collection, y_collection
-    )
