@@ -25,17 +25,17 @@
     dynamics_covariance = 0.0
     observation_covariance = 1.0
 
-[WLF-IMQ.learn]
+[WoLF-IMQ.learn]
     log_lr = [-5, 0]
     soft_threshold = [1e-6, 20.0]
-[WLF-IMQ.static]
+[WoLF-IMQ.static]
     dynamics_covariance = 0.0
     observation_covariance = 1.0
 
-[WLF-MD.learn]
+[WoLF-MD.learn]
     log_lr = [-5, 0]
     threshold = [1e-6, 20.0]
-[WLF-MD.static]
+[WoLF-MD.static]
     dynamics_covariance = 0.0
     observation_covariance = 1.0
 

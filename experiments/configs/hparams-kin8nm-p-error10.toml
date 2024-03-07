@@ -26,13 +26,13 @@ observation_covariance = 1.0
 log_lr = -4.437147427967857
 n_inner = 1.5306405048776868
 
-[hyperparams.WLF-IMQ]
+[hyperparams.WoLF-IMQ]
 dynamics_covariance = 0.0
 log_lr = -0.023740308212579997
 observation_covariance = 1.0
 soft_threshold = 5.1284754180296
 
-[hyperparams.WLF-MD]
+[hyperparams.WoLF-MD]
 dynamics_covariance = 0.0
 log_lr = 0.0
 observation_covariance = 1.0
