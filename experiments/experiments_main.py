@@ -208,7 +208,7 @@ filter_fns = {
     "KF": filter_kf,
     "KF-B": filter_kfb,
     "KF-IW": filter_kfiw,
-    "WLF-IMQ": filter_wlfimq,
-    "WLF-MD": filter_wlfmd,
+    "WoLF-IMQ": filter_wlfimq,
+    "WoLF-MD": filter_wlfmd,
     "OGD": filter_ogd,
 }
