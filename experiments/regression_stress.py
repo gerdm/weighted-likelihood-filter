@@ -5,17 +5,25 @@ import pickle
 import numpy as np
 import flax.linen as nn
 from tqdm import tqdm
+import jax.numpy as jnp
 
 # local imports
 import datagen
 import experiments_main as experiment
 
 
-if __name__ == "__main__":
-    config_path, n_runs = sys.argv[1:]
+config_path, n_runs = sys.argv[1:]
+n_runs = int(n_runs)
 
-    with open(config_path) as f:
-        config = toml.load(f)
+config_path_search = "./configs/uci-hparam-search.toml"
+
+
+with open(config_path_search, "r") as f:
+    config_search = toml.load(f)
+
+
+with open(config_path) as f:
+    config = toml.load(f)
 
 
 p_errors_collection = {}
@@ -33,7 +41,7 @@ class MLP(nn.Module):
         return x
 
 model = MLP()
-def latent_fn(x): return x
+def state_fn(x): return x
 measurement_fn = model.apply
 
 hyperparams = config["hyperparams"]
@@ -54,15 +62,38 @@ for p_error in tqdm(p_errors):
     X0, y0 = X_collection[0], y_collection[0]
     params_init = model.init(key, X0[:1])
 
+    errs_methods = {} 
+    time_methods = {}
     for method in (pbar := tqdm(hyperparams, leave=False)):
+
+        config_method = config_search[method]
+        hparams_static = config_method.get("static", {})
+
+        if "observation_covariance" in hparams_static:
+            hparams_static["observation_covariance"] = jnp.eye(1) * hparams_static["observation_covariance"]
+
+        @jax.jit
+        def filterfn_jit(measurements, covariates, **hparams):
+            filterfn = experiment.filter_fns[method]
+            yhat_pp = filterfn(
+                **hparams, **hparams_static,
+                params_init=params_init, measurements=measurements, covariates=covariates,
+                measurement_fn=measurement_fn, state_fn=state_fn
+            )
+            return yhat_pp
+
         pbar.set_description(f"p_error: {p100}, method: {method}")
         hparams = hyperparams[method]
         time_collection, pp_est = experiment.eval_filterfn_collection(
-            experiment.filter_fns[method], hparams, X_collection, y_collection
+            filterfn_jit, hparams, X_collection, y_collection
         )
-        errs = np.power(pp_est - y_collection, 2)
-        p_errors_collection[method] = errs
-        time_collection_all[method] = time_collection
+        errs = pp_est - y_collection
+        errs_methods[method] = errs
+        time_methods[method] = time_collection
+
+
+    p_errors_collection[p100] = errs_methods
+    time_collection_all[p100] = time_methods
 
 
 res = {
