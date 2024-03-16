@@ -1,0 +1,501 @@
+<!-- Based on a poster template from https://github.com/cpitclaudel/academic-poster-template -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>WoLF — Outlier-robust Kalman Filtering through generalises Bayes</title>
+    <link rel="icon" href="figs/logos/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="index.css">
+    <meta name="viewport" content="height=device-height, width=device-width, initial-scale=1">
+
+    <!-- MathJax -->
+          <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-chtml-full.min.js" integrity="sha512-PbLRl9V4qEM7j3xggKupLNdcodHT0w+x77S/JoTWxrhPEVZ0NkTPp90bzUeTyFXsBzsaApVOZdCHIzL6o51KiA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    
+    <!-- highlight.js -->
+          <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/mono-blue.min.css" integrity="sha512-9MaxPqXjPueWIGbV9cvVzkGnBxywb1kSNUtjm5Ttnk0ltKD23voJdHxAh6y9k10CwWwrFiFn49FG88KZuFzbTg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js" integrity="sha512-bgHRAiTjGrzHzLyKOnpFvaEpGzJet3z4tZnXGjpsCcqOnAH6VGUx9frc5bcIhKTVLEiCO6vEhNAgx5jtLUYrfA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/languages/scala.min.js" integrity="sha512-V270YlcVZGteVNcd3wOMtRGK/UBHMZKx7/UR9bcQx4jhg8MkWcfHrCQlEbhlBu6MhHRa88bOBPbfxfqVUO3fOQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/languages/verilog.min.js" integrity="sha512-4xzKcnOhXeYySC/PneV7sO832OyA5c0IYis5M6OQ6Bncw3F85K+xJk2uh4WNZSWONWBRKlxMPhJe3MmmgVWccw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    
+    <script defer>hljs.highlightAll();</script>
+
+    <!-- fonts -->
+          <link rel="preconnect" href="https://fonts.googleapis.com">
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+      <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans+Condensed:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&display=swap" rel="stylesheet">
+    
+          </head>
+
+  <body vocab="http://schema.org/" typeof="ScholarlyArticle">
+    <header role="banner">
+      <aside>
+                      </aside>
+      <div>
+        <h1 property="headline">WoLF</h1>
+                  <h2 property="alternativeHeadline">Outlier-robust Kalman Filtering through generalises Bayes</h2>
+                <address>
+              <a property="author">G. Duran-Martin<sup>a,c</sup></a>,
+  <a property="author">M. Altamirano<sup>b</sup></a>,
+  <a property="author">A.Y. Shestopaloff<sup>a</sup></a>,
+  <a property="author">L. Sanchez-Betancourt<sup>c,d</sup></a>,
+  <a property="author">J. Knoblauch<sup>b</sup></a>,
+  <a property="author">M. Jones<sup>e</sup></a>,
+  <a property="author">F.X. Briol<sup>b</sup></a>,
+  <a property="author">K. Murphy<sup>f</sup></a>.
+          <br />            <sup>a</sup><a property="sourceOrganization">Queen Mary University</a>,
+  <sup>b</sup><a property="sourceOrganization">University College London</a>,
+  <sup>c</sup><a property="sourceOrganization">Oxford-Man Institute of Quantitative Finance</a>,
+  <sup>d</sup><a property="sourceOrganization">University of Oxford</a>,
+  <sup>e</sup><a property="sourceOrganization">University of Colorado Boulder</a>,
+  <sup>f</sup><a property="sourceOrganization">Google Deepmind</a>.
+        </address>
+        <span class="publication-info">
+                      <span property="publisher">Unpublished</span>,
+            <time pubdate property="datePublished" datetime="2020-09-08">September 8, 2020</time>
+                  </span>
+      </div>
+              <aside>
+                            </aside>
+          </header>
+
+    <main property="articleBody">
+      
+<article propert="abstract">
+<header><h3>TL;DR</h3></header>
+<p>
+<strong>
+Our weighted likelihood filter (WoLF) is a provably robust variant of the Kalman filter (KF)
+</strong>
+in the presence of outliers and misspecified measurement models.
+We show its capabilities in
+tracking problems (via the KF),
+online learning of neural neworks (via the extended KF),
+and data assimilation (via the ensemble KF).
+</p>
+
+
+<figure>
+<img src="intro-plot.png" style="width: 80%; height:auto">
+<figcaption>
+The dotted blue line shows the KF posterior mean estimate and
+the solid orange line shows the WoLF posterior mean estimate.
+</figcaption>
+</figure>
+
+</article>
+
+
+<article>
+<header><h3>Problem statement (linear setting)</h3></header>
+<p>Consider the state-space model (SSM)</p>
+
+$$
+\def\R{\mathbb{R}}
+\def\bm#1{\boldsymbol #1}
+\begin{aligned}
+    {\bm\theta_t} &= {\bf F}_t\bm\theta_{t-1} + \bm\phi_t,\\
+    {\bm y}_t &= {\bf H}_t\bm\theta_t + \bm\varphi_t,
+\end{aligned}
+$$
+
+<p>
+with \(\bm\theta_t\in\R^p\) the (latent) state vector, \({\bm y}_t\in\R^d\) the (observed) measurement vector, \({\bf F}_t\in\R^{p\times p}\) the state transition matrix, \({\bf H}_t\in\R^{d\times p}\), \(\bm\phi_t\) a zero-mean Gaussian-distributed random vector with known covariance matrix \({\bf Q}_t\), and \(\bm\varphi_t\) any zero-mean random vector representing the measurement noise.
+</p>
+
+<p>
+We determine either \(\mathbb{E}[\bm\theta_t \vert \bm y_{1:t}]\) or \(\mathbb{E}[\bm y_{t+1} \vert \bm y_{1:t}]\) recursively
+by applying the <strong>predict</strong> and <strong>modified update</strong> equations.
+</p>
+
+$$
+\begin{aligned}
+q(\bm\theta_t \vert \bm y_{1:t-1})
+&= \int p(\bm\theta_t \vert \bm\theta_{t-1})
+q(\bm\theta_{t-1} \vert \bm y_{1:t-1}) d\bm\theta_{t-1}\\
+q(\bm\theta_t \vert \bm y_{1:t})
+&\propto
+\exp(-\ell_t(\bm\theta_t))
+q(\bm\theta_t \vert \bm y_{1:t-1})
+\end{aligned}
+$$
+
+<p>
+with \(\ell_t(\bm\theta) = \exp\Big(-W_t(\bm y_{1:t})\log p(\bm y_t \vert \bm\theta_t))\Big)\), and
+\(W_t: \mathbb{R}^{d\times\ldots\times d} \to \mathbb{R}\) the weighting function.
+</p>
+</article>
+
+<article>
+<header><h3>Weighted likelihood filter (WoLF)</h3></header>
+<p>
+If the SSM follows linear dynamics, the predict and update equations are given by
+</p>
+<p>
+ <strong><code>Require</code></strong> \({\bf F}_t, {\bf Q}_t\)<code>// predict step</code><br>
+    \(\bm\mu_{t\vert t-1} \gets {\bf F}_t\bm\mu_t\)<br>
+    \(\bm\Sigma_{t\vert t-1} \gets {\bf F}_t\bm\Sigma_t{\bf F}_t^\intercal + {\bf Q}_t\)<br>
+</p>
+<p>
+  <strong><code>Require</code></strong> \(\bm y, {\bf H}_t, {\bf R}_t\)<code>// update step </code><br>
+    \(\hat{\bm y}_t \gets {\bf H}_t\bm\mu_{t|t-1}\)<br>
+    \(w_t \gets W_t(\bm y_{1:t})\)<br>
+    \(\bm\Sigma_t^{-1} \gets \bm\Sigma_{t|t-1} + w_t^2 {\bf H}_t^\intercal{\bf R}_t^{-1}{\bf H}_t\)<br>
+    \({\bf K}_t \gets w_t^2 \bm\Sigma_t{\bf H}_t^\intercal{\bf R}_t^{-1}\)<br>
+    \(\bm\mu_t \gets \bm\mu_{t|t-1} + {\bf K}_t(\bm y_t - \hat{\bm y}_t)\)<br>
+</p>
+</article>
+
+<article>
+<header><h3>Weighting functions</h3></header>
+<p>
+We present two choices of weighting functions:
+<ol>
+    <li> The inverse multi-quadratic (IMQ) — 
+    a <i>compensation-based</i> weighting function, and
+    <li> The tresholded Mahalanobis distance (TMD) — 
+    a <i>detect-and-reject</i> weighting function.
+</ol>
+</p>
+<p>
+<strong>Inverse multi-quadratic weighting function (IMQ)</strong>
+$$
+    W_{t}(\bm y_{1:t})  =\left(1+\frac{||\bm y_{t}-\hat{\bm y}_{t}||_2^2}{c^{2}}\right)^{-1/2}
+$$
+with \(c > 0\).
+</p>
+
+<p>
+<strong>Tresholded Mahalanobis-based weighting function (TMD) </strong>
+$$
+W_{t}(\bm y_{1:t}) =
+    \begin{cases}
+    1 & \text{if } \|{\bf R}_t^{-1/2}(\bm y_t - \hat{\bm y}_t)\|_2^2 \leq c\\
+    0 & \text{otherwise}
+    \end{cases}
+$$
+with \(c > 0\).
+</p>
+</article>
+
+
+<article>
+<header><h3>Theoretical results</h3></header>
+
+<p>
+<strong>Definition: PIF</strong><br>
+The posterior influence function is given by
+$$
+    \text{PIF}(\bm y_t^c, \bm y_{1:t-1}) = \text{KL}(
+    q(\bm\theta_t  \vert \bm y_t^c, \bm y_{1:t-1})\,\|\,
+    q(\bm\theta_t  \vert \bm y_t, \bm y_{1:t-1})\,\|\,
+    ).
+$$
+</p>
+
+<p>
+<strong>Definition: Outlier-robust filter</strong><br>
+A filter is outlier-robust if the PIF is bounded, i.e.,
+$$
+    \sup_{\bm y_t^c\in\R^d}|\text{PIF}(\bm y_t^c, \bm y_{1:t-1})| < \infty.
+$$
+</p>
+
+<p>
+<strong>Theorem</strong><br>
+If \(\sup_{\bm y_t\in\R^d} W_t(\bm y_t) < \infty\) and \(\sup_{\bm y_t\in\R^d} W_t(\bm y_{1:t})^2 \|\bm y_t\|^2 < \infty\) then the PIF is bounded.
+</p>
+
+<ol>
+<strong>Remarks</strong>
+    <li> The Kalman filter is <strong>not</strong> outlier-robust.</li>
+    <li> The IMQ and TMD are outlier-robust.</li>
+</ol>
+
+<figure>
+<img src="2d-tracking-grid-pif.png">
+<figcaption>
+PIF for the 2d-tracking problem.
+The last measurement \(\bm y_t\) is replaced by \(\bm y_t^c = \bm y_t + \bm\epsilon\),
+where \(\bm\epsilon \in [-5, 5]^2\).
+</figcaption>
+</figure>
+
+</article>
+
+<article>
+<header><h3>Computational results</h3></header>
+<p>
+Compared to variational-Bayes (VB) methods, which require multiple iterations to converge,
+WoLF has equivalent computational cost to the Kalman filter.
+</p>
+
+<table>
+    <thead>
+        <tr>
+            <th>Method</th>
+            <th>Time</th>
+            <th>#HP</th>
+            <th>Ref</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>KF</td>
+            <td>\(O(p^3)\)</td>
+            <td>0</td>
+            <td>Kalman1960</td>
+        </tr>
+        <tr>
+            <td>KF-B</td>
+            <td>\(O(I_{-\epsilon}\,p^3)\)</td>
+            <td>3</td>
+            <td>Wang2018</td>
+        </tr>
+        <tr>
+            <td>KF-IW</td>
+            <td>\(O(I\,p^3)\)</td>
+            <td>2</td>
+            <td>Agamennoni2012</td>
+        </tr>
+        <tr>
+            <td>OGD</td>
+            <td>\(O(I\, p^2)\)</td>
+            <td>2</td>
+            <td>Bencomo2023</td>
+        </tr>
+        <tr>
+            <td>WoLF-IMQ</td>
+            <td>\(O(p^3)\)</td>
+            <td>1</td>
+            <td>(Ours)</td>
+        </tr>
+        <tr>
+            <td>WoLF-TMD</td>
+            <td>\(O(p^3)\)</td>
+            <td>1</td>
+            <td>(Ours)</td>
+        </tr>
+    </tbody>
+    <caption>
+    Below, \(I\) is the number of inner iterations, \(I_{-\epsilon}\) is the number of inner iterations to reach a threshold \(\epsilon\),
+    \(p\) is the dimension of the state vector, and #HP is the number of hyperparameters.
+    </caption>
+</table>
+</article>
+
+<article>
+<header><h3>Experiment: Kalman filter</h3></header>
+<h3>2d tracking</h3>
+<p>
+The SSM is linear with \({\bf Q}_t = q\) \({\bf I}_4\), \({\bf R}_t = r\,{\bf I}_2\),
+</p>
+<div style="font-size: 80%;">
+$$
+\begin{aligned}
+    {\bf F}_t &=
+    \begin{pmatrix}
+    1 & 0 & \Delta & 0\\
+    0 & 1 & 0 & \Delta \\
+    0 & 0 & 1 & 0 \\
+    0 & 0 & 0 & 1
+    \end{pmatrix}, & 
+    {\bf H}_t &= \begin{pmatrix}
+        1 & 0 & 0 & 0\\
+        0 & 1 & 0 & 0
+    \end{pmatrix},
+\end{aligned}
+$$
+</div>
+<p>
+\(\Delta = 0.1\) is the sampling rate, \(q = 0.10\) is the system noise, \(r = 10\) is the measurement noise, and \({\bf I}_K\) is a \(K\times K\) identity matrix.
+</p>
+<p>
+We measure the RMSE of the posterior mean estimate of the state components.
+</p>
+
+<strong>Student variant</strong>
+<p>
+Measurements are sampled according to
+</p>
+$$
+\begin{aligned}
+p(\bm y_t \vert \bm\theta_t)
+&= \text{St}({\bm y_t\,\vert\,{\bf H}_t\bm\theta_t,\,{\bf R}_t,\nu_t})\\
+&= \int \mathcal{N}\left(\bm y, {\bf H}_t\bm\theta_t, {\bf R}_t/\tau\right)
+        \text{Gam}(\tau \vert \nu_t / 2, \nu_t / 2) d\tau.
+\end{aligned}
+$$
+
+<strong>Mixture variant</strong>
+<p>
+Measurements are sampled according to
+</p>
+$$
+\begin{aligned}
+p(\bm y_t \vert \bm\theta_t)
+&= {\cal N}\left(\bm y_t \vert {\bf m}_t, {\bf R}_t\right),\\
+{\bf m}_t &= 
+    \begin{cases}
+        {\bf H}_t\,\bm\theta_t & \text{w.p.}\ 1 - p_\epsilon,\\
+        2\,{\bf H}_t\,\bm\theta_t & \text{w.p.}\ p_\epsilon,
+    \end{cases}
+\end{aligned}
+$$
+<p>
+with \(\epsilon = 0.05\).
+</p>
+
+<hr>
+
+</article>
+<article>
+<header>
+<h3>KF results</h3>
+</header>
+<strong>Sample runs</strong>
+<div class="row">
+<div class="column">
+    <img src="2d-ssm-comparison-single-run-covariance.png">
+</div>
+<div class="column">
+    <img src="2d-ssm-comparison-single-run-mean.png">
+</div>
+</div>
+ 
+ <strong>Mean slowdown rate over KF</strong>
+<table>
+    <thead>
+        <tr>
+            <th>Method</th>
+            <th>Student</th>
+            <th>Mixture</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>KF-B</td>
+            <td>2.0x</td>
+            <td>3.7x</td>
+        </tr>
+        <tr>
+            <td>KF-IW</td>
+            <td>1.2x</td>
+            <td>5.3x</td>
+        </tr>
+        <tr>
+            <td>WoLF-IMQ (ours)</td>
+            <td>1.0x</td>
+            <td>1.0x</td>
+        </tr>
+        <tr>
+            <td>WoLF-TMD (ours)</td>
+            <td>1.0x</td>
+            <td>1.0x</td>
+        </tr>
+    </tbody>
+</table>
+
+</article>
+
+
+<article>
+<header><h3>Experiment: extended Kalman filter</h3></header>
+<h3>Online learning of UCI datasets</h3>
+<p>
+Online training of neural networks on a corrupted version of the tabular UCI datasets.
+We consider a multilayered perceptron (MLP) with twenty hidden units, two hidden layers, and a real-valued output unit.
+We evaluate the median squared error (RMedSE) between the true and predicted output.
+</p>
+<p> The SSM is
+$$
+\begin{aligned}
+    {\bm\theta_t} &= \bm\theta_{t-1} + \bm\phi_t\\
+    {\bm y}_t &= h_t(\bm\theta_t) + \bm\varphi_t,
+\end{aligned}
+$$
+<br>
+with
+\(h_t(\bm\theta_t) = h(\bm\theta_t, {\bf x}_t) \) the measurement function,
+\({\bf x}_t\in\mathbb{R}^m\) the input vector,
+and \(h(\bm\theta_t, {\bf x}_t)\) the output of the MLP.
+</p>
+<p>
+We train the MLP using variants of the extended Kalman filter (EKF) — one observation, one parameter update.
+We modify the measurement mean of \(p(\bm y_t \vert \bm\theta_t)\) with
+</p>
+$$
+\mathbb{E}[\bm y_t \vert \bm\theta_t]
+\approx {\bf H}_t(\bm\theta_t - \bm\mu_{t | t-1}) + h_t(\bm\mu_{t | t-1}) =: \bar{\bm y}_t.
+$$
+
+</article>
+
+<article>
+<header><h3>EKF Results</h3></header>
+
+<figure>
+<img src="relative-ogd-metrics-datasets.png">
+<figcaption>
+RMedSE versus time per step (relative to OGD) acrross the corrupted UCI datasets.
+</figcaption>
+</figure>
+
+</article>
+
+<article>
+<header><h3>Experiment: ensemble Kalman filter</h3></header>
+<h3>Data assimilation</h3>
+The SSM is
+$$
+\begin{aligned}
+    \dot{\bm\theta}_{s,i} &= \Big(\bm\theta_{s, i+1} - \bm\theta_{s, i-2}\Big) \bm\theta_{s, i-1} - \bm\theta_{s,i} + \bm\phi_{s,i},\\
+    {\bm y}_{s,i} &= 
+    \begin{cases}
+        \bm\theta_{s,i} + \bm\varphi_{s,i} & \text{w.p. } 1 - p_\epsilon,\\
+        100 & \text{w.p. } p_\epsilon.
+    \end{cases}
+\end{aligned}
+$$
+<p>
+Here, \(\bm\theta_{s,k}\) is the value of the state component \(k\) at step \(s\),
+\(\bm\phi_{s,i} \sim {\cal N}(8, 1)\), \(\bm\varphi_{s,i} \sim {\cal N}(0, 1)\), \(p_\epsilon = 0.001\),
+\(i = 1, \ldots, d\), \(s = 1, \ldots, S\), with \(S \gg 1\) the number of steps,
+and we use the convention \(\bm\theta_{s, d + k} = \bm\theta_{s, k}\), \(\bm\theta_{s, -k} = \bm\theta_{s, d - k}\).
+
+We consider the metric
+\(L_t = \sqrt{\frac{1}{d}(\bm\theta_t - \bm\mu_t)^\intercal (\bm\theta_t - \bm\mu_t)}\).
+</p>
+<figure>
+<img src="lorenz96-waves.png" style="width: 90%; height:auto">
+</figure>
+
+</article>
+<article>
+<header><h3>EnKF results</h3></header>
+
+<figure>
+    <img src="lorenz96-methods-benchmark.png" style="width: 90%; height:auto">
+<figcaption>
+    Bootstrap estimate of \(L_T\) over 20 runs and 500 bootstrapped samples
+    as a function of the \(c\) hyperparameter.
+</figcaption>
+</figure>
+
+</article>
+
+
+    </main>
+
+    <footer>
+      <aside>
+        <pre>github.com/gerdm/weighted-likelihood-filter</pre>
+      </aside>
+      <div>
+                      </div>
+      <aside>
+                      </aside>
+    </footer>
+  </body>
+</html>
