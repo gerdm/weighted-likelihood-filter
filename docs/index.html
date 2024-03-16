@@ -77,7 +77,7 @@ and data assimilation (via the ensemble KF).
 
 
 <figure>
-<img src="./intro-plot.png" style="width: 80%; height:auto">
+<img src="intro-plot.png" style="width: 80%; height:auto">
 <figcaption>
 The dotted blue line shows the KF posterior mean estimate and
 the solid orange line shows the WoLF posterior mean estimate.
@@ -167,7 +167,7 @@ with \(c > 0\).
 </p>
 
 <p>
-<strong>Tresholded Mahalanobis-based weighting function (TMD) </strong>
+<strong>Thresholded Mahalanobis-based weighting function (TMD) </strong>
 $$
 W_{t}(\bm y_{1:t}) =
     \begin{cases}
@@ -210,7 +210,7 @@ If \(\sup_{\bm y_t\in\R^d} W_t(\bm y_t) < \infty\) and \(\sup_{\bm y_t\in\R^d} W
 <ol>
 <strong>Remarks</strong>
     <li> The Kalman filter is <strong>not</strong> outlier-robust.</li>
-    <li> The IMQ and TMD are outlier-robust.</li>
+    <li> Filters with IMQ and TMD weighting function are outlier-robust.</li>
 </ol>
 
 <figure>
@@ -249,7 +249,7 @@ WoLF has equivalent computational cost to the Kalman filter.
         </tr>
         <tr>
             <td>KF-B</td>
-            <td>\(O(I_{-\epsilon}\,p^3)\)</td>
+            <td>\(O(I\,p^3)\)</td>
             <td>3</td>
             <td>Wang2018</td>
         </tr>
@@ -279,8 +279,9 @@ WoLF has equivalent computational cost to the Kalman filter.
         </tr>
     </tbody>
     <caption>
-    Below, \(I\) is the number of inner iterations, \(I_{-\epsilon}\) is the number of inner iterations to reach a threshold \(\epsilon\),
-    \(p\) is the dimension of the state vector, and #HP is the number of hyperparameters.
+    Below, \(I\) is the number of inner iterations, 
+    \(p\) is the dimension of the state vector,
+    and #HP is the number of hyperparameters.
     </caption>
 </table>
 </article>
@@ -490,7 +491,9 @@ We consider the metric
 
     <footer>
       <aside>
-        <pre>github.com/gerdm/weighted-likelihood-filter</pre>
+        <small>
+<pre>github.com/gerdm/weighted-likelihood-filter</pre>
+</small>
       </aside>
       <div>
                       </div>
