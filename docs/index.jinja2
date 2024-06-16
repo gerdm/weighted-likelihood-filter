@@ -39,7 +39,7 @@
 <header><h3>TL;DR</h3></header>
 <p>
 <strong>
-Our weighted likelihood filter (WoLF) is a provably robust variant of the Kalman filter (KF)
+The weighted-observation likelihood filter (WoLF) is a provably robust variant of the Kalman filter (KF)
 </strong>
 in the presence of outliers and misspecified measurement models.
 We show its capabilities in
@@ -95,15 +95,15 @@ q(\bm\theta_t \vert \bm y_{1:t-1})
 $$
 
 <p>
-with \(\ell_t(\bm\theta) = \exp\Big(-W_t(\bm y_{1:t})\log p(\bm y_t \vert \bm\theta_t))\Big)\), and
-\(W_t: \mathbb{R}^{d\times\ldots\times d} \to \mathbb{R}\) the weighting function.
+with \(\ell_t(\bm\theta) = -W\left(\bm y_{t}, \hat{\bm y}_t\right)\,\log p(\bm y_t \vert \bm\theta_t)\), and
+\(W: \mathbb{R}^{d}\times\mathbb{R}^d \to \mathbb{R}\) the weighting function.
 </p>
 </article>
 
 <article>
 <header><h3>Weighted likelihood filter (WoLF)</h3></header>
 <p>
-If the SSM follows linear dynamics, the predict and update equations are given by
+If the SSM follows linear dynamics, the predict and update equations are
 </p>
 <p>
  <strong><code>Require</code></strong> \({\bf F}_t, {\bf Q}_t\)<code>// predict step</code><br>
@@ -111,9 +111,9 @@ If the SSM follows linear dynamics, the predict and update equations are given b
     \(\bm\Sigma_{t\vert t-1} \gets {\bf F}_t\bm\Sigma_t{\bf F}_t^\intercal + {\bf Q}_t\)<br>
 </p>
 <p>
-  <strong><code>Require</code></strong> \(\bm y, {\bf H}_t, {\bf R}_t\)<code>// update step </code><br>
+  <strong><code>Require</code></strong> \(\bm y_t, {\bf H}_t, {\bf R}_t\)<code>// update step </code><br>
     \(\hat{\bm y}_t \gets {\bf H}_t\bm\mu_{t|t-1}\)<br>
-    \(w_t \gets W_t(\bm y_{1:t})\)<br>
+    \(w_t \gets W\left(\bm y_{t}, \hat{\bm y}_t\right)\)<br>
     \(\bm\Sigma_t^{-1} \gets \bm\Sigma_{t|t-1} + w_t^2 {\bf H}_t^\intercal{\bf R}_t^{-1}{\bf H}_t\)<br>
     \({\bf K}_t \gets w_t^2 \bm\Sigma_t{\bf H}_t^\intercal{\bf R}_t^{-1}\)<br>
     \(\bm\mu_t \gets \bm\mu_{t|t-1} + {\bf K}_t(\bm y_t - \hat{\bm y}_t)\)<br>
@@ -123,26 +123,26 @@ If the SSM follows linear dynamics, the predict and update equations are given b
 <article>
 <header><h3>Weighting functions</h3></header>
 <p>
-We present two choices of weighting functions:
+Two choices of weighting functions:
 <ol>
     <li> The inverse multi-quadratic (IMQ) — 
     a <i>compensation-based</i> weighting function, and
-    <li> The tresholded Mahalanobis distance (TMD) — 
+    <li> The thresholded Mahalanobis distance (TMD) — 
     a <i>detect-and-reject</i> weighting function.
 </ol>
 </p>
 <p>
 <strong>Inverse multi-quadratic weighting function (IMQ)</strong>
 $$
-    W_{t}(\bm y_{1:t})  =\left(1+\frac{||\bm y_{t}-\hat{\bm y}_{t}||_2^2}{c^{2}}\right)^{-1/2}
+    W\left(\bm y_{t}, \hat{\bm y}_t\right)  =\left(1+\frac{||\bm y_{t}-\hat{\bm y}_{t}||_2^2}{c^{2}}\right)^{-1/2}
 $$
 with \(c > 0\).
 </p>
 
 <p>
-<strong>Tresholded Mahalanobis-based weighting function (TMD) </strong>
+<strong>Thresholded Mahalanobis-based weighting function (TMD) </strong>
 $$
-W_{t}(\bm y_{1:t}) =
+W\left(\bm y_{t}, \hat{\bm y}_t\right) =
     \begin{cases}
     1 & \text{if } \|{\bf R}_t^{-1/2}(\bm y_t - \hat{\bm y}_t)\|_2^2 \leq c\\
     0 & \text{otherwise}
@@ -157,8 +157,8 @@ with \(c > 0\).
 <header><h3>Theoretical results</h3></header>
 
 <p>
-<strong>Definition: PIF</strong><br>
-The posterior influence function is given by
+<strong>Definition</strong><br>
+The posterior influence function (PIF) is
 $$
     \text{PIF}(\bm y_t^c, \bm y_{1:t-1}) = \text{KL}(
     q(\bm\theta_t  \vert \bm y_t^c, \bm y_{1:t-1})\,\|\,
@@ -177,13 +177,14 @@ $$
 
 <p>
 <strong>Theorem</strong><br>
-If \(\sup_{\bm y_t\in\R^d} W_t(\bm y_t) < \infty\) and \(\sup_{\bm y_t\in\R^d} W_t(\bm y_{1:t})^2 \|\bm y_t\|^2 < \infty\) then the PIF is bounded.
+If \(\sup_{\bm y_t\in\R^d} W\left(\bm y_t, \hat{\bm y}_t\right) < \infty\)
+and \(\sup_{\bm y_t\in\R^d} W\left(\bm y_{t}, \hat{\bm y}_t\right)^2\,\|\bm y_t\|^2 < \infty\) then the PIF is bounded.
 </p>
 
 <ol>
 <strong>Remarks</strong>
     <li> The Kalman filter is <strong>not</strong> outlier-robust.</li>
-    <li> The IMQ and TMD are outlier-robust.</li>
+    <li> Filters with IMQ and TMD weighting function are outlier-robust.</li>
 </ol>
 
 <figure>
@@ -201,7 +202,7 @@ where \(\bm\epsilon \in [-5, 5]^2\).
 <header><h3>Computational results</h3></header>
 <p>
 Compared to variational-Bayes (VB) methods, which require multiple iterations to converge,
-WoLF has equivalent computational cost to the Kalman filter.
+WoLF has an equivalent computational cost to the Kalman filter.
 </p>
 
 <table>
@@ -222,7 +223,7 @@ WoLF has equivalent computational cost to the Kalman filter.
         </tr>
         <tr>
             <td>KF-B</td>
-            <td>\(O(I_{-\epsilon}\,p^3)\)</td>
+            <td>\(O(I\,p^3)\)</td>
             <td>3</td>
             <td>Wang2018</td>
         </tr>
@@ -252,17 +253,18 @@ WoLF has equivalent computational cost to the Kalman filter.
         </tr>
     </tbody>
     <caption>
-    Below, \(I\) is the number of inner iterations, \(I_{-\epsilon}\) is the number of inner iterations to reach a threshold \(\epsilon\),
-    \(p\) is the dimension of the state vector, and #HP is the number of hyperparameters.
+    Below, \(I\) is the number of inner iterations, 
+    \(p\) is the dimension of the state vector,
+    and #HP is the number of hyperparameters.
     </caption>
 </table>
 </article>
 
 <article>
-<header><h3>Experiment: Kalman filter</h3></header>
+<header><h3>Experiment: Kalman filter (KF)</h3></header>
 <h3>2d tracking</h3>
 <p>
-The SSM is linear with \({\bf Q}_t = q\) \({\bf I}_4\), \({\bf R}_t = r\,{\bf I}_2\),
+Linear SSM with \({\bf Q}_t = q\) \({\bf I}_4\), \({\bf R}_t = r\,{\bf I}_2\),
 </p>
 <div style="font-size: 80%;">
 $$
@@ -296,7 +298,7 @@ $$
 \begin{aligned}
 p(\bm y_t \vert \bm\theta_t)
 &= \text{St}({\bm y_t\,\vert\,{\bf H}_t\bm\theta_t,\,{\bf R}_t,\nu_t})\\
-&= \int \mathcal{N}\left(\bm y, {\bf H}_t\bm\theta_t, {\bf R}_t/\tau\right)
+&= \int \mathcal{N}\left(\bm y_t, {\bf H}_t\bm\theta_t, {\bf R}_t/\tau\right)
         \text{Gam}(\tau \vert \nu_t / 2, \nu_t / 2) d\tau.
 \end{aligned}
 $$
@@ -374,7 +376,7 @@ with \(\epsilon = 0.05\).
 
 
 <article>
-<header><h3>Experiment: extended Kalman filter</h3></header>
+<header><h3>Experiment: extended Kalman filter (EKF)</h3></header>
 <h3>Online learning of UCI datasets</h3>
 <p>
 Online training of neural networks on a corrupted version of the tabular UCI datasets.
@@ -390,13 +392,12 @@ $$
 $$
 <br>
 with
-\(h_t(\bm\theta_t) = h(\bm\theta_t, {\bf x}_t) \) the measurement function,
-\({\bf x}_t\in\mathbb{R}^m\) the input vector,
-and \(h(\bm\theta_t, {\bf x}_t)\) the output of the MLP.
+\(h_t(\bm\theta_t) = h(\bm\theta_t, {\bf x}_t) \) the MLP and
+\({\bf x}_t\in\mathbb{R}^m\) the input vector.
 </p>
 <p>
-We train the MLP using variants of the extended Kalman filter (EKF) — one observation, one parameter update.
-We modify the measurement mean of \(p(\bm y_t \vert \bm\theta_t)\) with
+We estimate \( \mathbb{E}[\bm\theta_t \vert \bm y_{1:t}] \) via the extended Kalman filter (EKF) — one measurement, one parameter update.
+We modify the measurement mean with
 </p>
 $$
 \mathbb{E}[\bm y_t \vert \bm\theta_t]
@@ -411,14 +412,14 @@ $$
 <figure>
 <img src="relative-ogd-metrics-datasets.png">
 <figcaption>
-RMedSE versus time per step (relative to OGD) acrross the corrupted UCI datasets.
+RMedSE versus time per step, relative to online gradient descent (OGD), acrross corrupted UCI datasets.
 </figcaption>
 </figure>
 
 </article>
-
 <article>
-<header><h3>Experiment: ensemble Kalman filter</h3></header>
+
+<header><h3>Experiment: ensemble Kalman filter (EnKF)</h3></header>
 <h3>Data assimilation</h3>
 The SSM is
 $$
@@ -434,24 +435,26 @@ $$
 <p>
 Here, \(\bm\theta_{s,k}\) is the value of the state component \(k\) at step \(s\),
 \(\bm\phi_{s,i} \sim {\cal N}(8, 1)\), \(\bm\varphi_{s,i} \sim {\cal N}(0, 1)\), \(p_\epsilon = 0.001\),
-\(i = 1, \ldots, d\), \(s = 1, \ldots, S\), with \(S \gg 1\) the number of steps,
-and we use the convention \(\bm\theta_{s, d + k} = \bm\theta_{s, k}\), \(\bm\theta_{s, -k} = \bm\theta_{s, d - k}\).
+\(i = 1, \ldots, d\), \(s = 1, \ldots, S\), with \(S \gg 1\) the number of steps, and
+\(\bm\theta_{s, d + k} = \bm\theta_{s, k}\), \(\bm\theta_{s, -k} = \bm\theta_{s, d - k}\).
 
 We consider the metric
 \(L_t = \sqrt{\frac{1}{d}(\bm\theta_t - \bm\mu_t)^\intercal (\bm\theta_t - \bm\mu_t)}\).
 </p>
-<figure>
-<img src="lorenz96-waves.png" style="width: 90%; height:auto">
-</figure>
 
 </article>
 <article>
 <header><h3>EnKF results</h3></header>
 
 <figure>
+<img src="lorenz96-waves.png" style="width: 90%; height:auto">
+</figure>
+
+
+<figure>
     <img src="lorenz96-methods-benchmark.png" style="width: 90%; height:auto">
 <figcaption>
-    Bootstrap estimate of \(L_T\) over 20 runs and 500 bootstrapped samples
+    Bootstrap estimate of \(L_T\) over 20 runs and 500 samples
     as a function of the \(c\) hyperparameter.
 </figcaption>
 </figure>
@@ -463,5 +466,7 @@ We consider the metric
 
 
 {% block footer_left %}
+<small>
 <pre>github.com/gerdm/weighted-likelihood-filter</pre>
+</small>
 {% endblock %}

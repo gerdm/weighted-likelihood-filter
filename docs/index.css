@@ -429,16 +429,16 @@ html {
 /* Create three equal columns that sits next to each other */
 .column {
   flex: 50%;
-  padding: 5px;
+  padding: 10px;
 }
 
 @media all and (min-width: 60rem) {
   main > * {
     flex-grow: 1;
-    margin: 0.25rem;
+    margin: 1rem;
     max-width: 40rem;
     min-width: 25rem;
-    width: calc(25% - 0.5rem);
+    width: calc(25% - 2rem);
   }
 }
 

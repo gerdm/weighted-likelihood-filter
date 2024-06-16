@@ -38,7 +38,7 @@ article{
     }
 }
 
-html { font-size: 1.0rem }
+html { font-size: 1rem }
 
 
 .row {
@@ -48,10 +48,10 @@ html { font-size: 1.0rem }
   /* Create three equal columns that sits next to each other */
  .column {
     flex: 50%;
-    padding: 5px;
+    padding: 10px;
 }
 
-$grid-gap: 0.5rem;
+$grid-gap: 2.0rem;
 
 @media all and (min-width: 60rem) {
   main > * {
