@@ -249,7 +249,6 @@ bo = BayesianOptimization(
 bo.maximize(init_points=init_points, n_iter=n_iter)
 
 
-import pdb; pdb.set_trace()
 
 method = "KF-B"
 configs[method] = bo.max["params"]
@@ -643,7 +642,7 @@ time_methods[method] = times
 # ***************************************************************************************
 
 
-rmedse_df = pd.DataFrame(jax.tree_map(
+rmedse_df = pd.DataFrame(jax.tree.map(
     lambda x: np.sqrt(np.median(np.power(x - y_collection, 2), 1)),
     hist_methods
 ))
